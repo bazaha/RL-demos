@@ -1,0 +1,53 @@
+
+=============
+== PyTorch ==
+=============
+
+NVIDIA Release 25.11 (build 231036167)
+PyTorch Version 2.10.0a0+b558c98
+Container image Copyright (c) 2025, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2014-2024 Facebook Inc.
+Copyright (c) 2011-2014 Idiap Research Institute (Ronan Collobert)
+Copyright (c) 2012-2014 Deepmind Technologies    (Koray Kavukcuoglu)
+Copyright (c) 2011-2012 NEC Laboratories America (Koray Kavukcuoglu)
+Copyright (c) 2011-2013 NYU                      (Clement Farabet)
+Copyright (c) 2006-2010 NEC Laboratories America (Ronan Collobert, Leon Bottou, Iain Melvin, Jason Weston)
+Copyright (c) 2006      Idiap Research Institute (Samy Bengio)
+Copyright (c) 2001-2004 Idiap Research Institute (Ronan Collobert, Samy Bengio, Johnny Mariethoz)
+Copyright (c) 2015      Google Inc.
+Copyright (c) 2015      Yangqing Jia
+Copyright (c) 2013-2016 The Caffe contributors
+All rights reserved.
+
+Various files include modifications (c) NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+
+GOVERNING TERMS: The software and materials are governed by the NVIDIA Software License Agreement
+(found at https://www.nvidia.com/en-us/agreements/enterprise-software/nvidia-software-license-agreement/)
+and the Product-Specific Terms for NVIDIA AI Products
+(found at https://www.nvidia.com/en-us/agreements/enterprise-software/product-specific-terms-for-ai-products/).
+
+NOTE: CUDA Forward Compatibility mode ENABLED.
+  Using CUDA 13.0 driver version 580.95.05 with kernel driver version 535.161.07.
+  See https://docs.nvidia.com/deploy/cuda-compatibility/ for details.
+
+[rsm iter 2/2] b=0.000 loss 5.4142 (p 4.3728 v 1.0414) ent 4.351 ev -0.040 | len 34.3 B/W/D 21/11/0 | sp 5s tr 0s
+  [anchor] vs iter000: 2W-2L-0D
+  iter000 vs iter002: 0-4-0
+  elo: [('iter000', 0.0), ('iter002', 902.2)]
+--- now resume 2 - on ONE gpu ---
+[init] Gomoku 9x9 / 5-in-a-row | net 0.84M | 1 workers on GPUs [0] | beta0=0.0 rule_iters=20 | tag=rsm
+[resume] carried 2 iterations / 1 evals from /tmp/rsm.json
+[rsm iter 3/4] b=0.000 loss 5.1829 (p 4.3605 v 0.8224) ent 4.297 ev +0.178 | len 31.8 B/W/D 9/23/0 | sp 5s tr 0s
+[rsm iter 4/4] b=0.000 loss 5.1159 (p 4.2693 v 0.8466) ent 4.283 ev +0.153 | len 31.5 B/W/D 11/21/0 | sp 8s tr 2s
+  [anchor] vs iter000: 3W-1L-0D
+  [anchor] vs iter002: 2W-2L-0D
+  iter000 vs iter002: 1-3-0
+  iter000 vs iter004: 2-2-0
+  iter002 vs iter004: 1-3-0
+  elo: [('iter000', 0.0), ('iter002', 59.6), ('iter004', 119.2)]
+iterations: [1, 2, 3, 4]
+evals: [2, 4]
+anchors: [(2, 0), (4, 0), (4, 2)]
+resumed_at: [{'iter': 2, 'time': 1786956307.0673757, 'workers': 1, 'gpus': [0]}]
+elo tags: ['iter000', 'iter002', 'iter004']
+workers now: 1 gpus: [0]

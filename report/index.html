@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>node09 · H20 GPU 训练通路验证报告</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --good-text: #006300; --good: #0ca30c;
+    --deemph: #c3c2b7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --good-text: #0ca30c;
+      --deemph: #52514e;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good-text: #0ca30c;
+    --deemph: #52514e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-1);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+  header.rpt { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  .sub { color: var(--text-2); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
+  .chip { font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+  .theme-btn { flex: none; font: inherit; font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  h2 { font-size: 16px; font-weight: 650; margin: 34px 0 4px; }
+  h2 .tag { font-size: 11px; font-weight: 500; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; margin-left: 8px; }
+  .lede { color: var(--text-2); font-size: 13px; margin: 0 0 14px; max-width: 72ch; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .lbl { font-size: 12px; color: var(--text-2); }
+  .tile .val { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .val small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 2px; }
+  .tile .delta { font-size: 12px; margin-top: 2px; color: var(--text-2); }
+  .tile .delta.up { color: var(--good-text); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  figure.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; margin: 0; padding: 14px 14px 10px; position: relative; }
+  figure.card figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .fig-title { font-size: 13px; font-weight: 600; }
+  .fig-note { font-size: 11.5px; color: var(--muted); }
+  .fig-actions { display: flex; gap: 6px; }
+  .tbl-btn { font: inherit; font-size: 11px; color: var(--text-2); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+  .tbl-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--axis); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-2); margin: 2px 0 4px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .key i { width: 14px; height: 0; border-top: 2.5px solid; border-radius: 2px; }
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; height: auto; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.12); padding: 7px 10px; font-size: 12px; display: none; min-width: 110px; z-index: 5; }
+  .tip .tx { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+  .tip .row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+  .tip .row i { width: 10px; height: 0; border-top: 2.5px solid; border-radius: 2px; flex: none; }
+  .tip .row b { font-weight: 600; }
+  .tip .row span { color: var(--text-2); }
+  .dtable { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 4px; display: none; }
+  .dtable th, .dtable td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .dtable th { color: var(--text-2); font-weight: 500; }
+  .dtable th:first-child, .dtable td:first-child { text-align: left; }
+  figure.card.show-table .dtable { display: table; }
+  figure.card.show-table .chart-box { display: none; }
+
+  .cp-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  .cp-btn { font: inherit; font-size: 12px; background: none; color: var(--text-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+  .cp-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--s1); box-shadow: inset 0 0 0 1px var(--s1); }
+  .cp-meta { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+  .cp-meta b { color: var(--text-1); }
+  canvas#cpCanvas { width: 100%; height: auto; display: block; border-radius: 6px; }
+
+  table.check { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table.check th, table.check td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--grid); }
+  table.check th { font-size: 12px; color: var(--text-2); font-weight: 500; }
+  table.check tr:last-child td { border-bottom: none; }
+  .ok { color: var(--good-text); font-weight: 600; }
+  .mono { font-variant-numeric: tabular-nums; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="rpt">
+    <div>
+      <h1>node09 · H20 GPU 训练通路验证</h1>
+      <div class="sub">Docker 容器内深度模型训练 + 经典强化学习各跑通一轮，验证环境、数据、GPU 计算与监控全链路。</div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">主题：跟随系统</button>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>结论 · 通路检查清单</h2>
+  <p class="lede">本次验证的目标是确认链路“通常、可用、可展示”，不追求训练到最优。以下每一环均已实际执行并留有数据。</p>
+  <table class="check" id="checklist"></table>
+
+  <h2>深度模型训练 <span class="tag">ResNet-18 · CIFAR-10 · bf16 AMP · 单卡 H20</span></h2>
+  <p class="lede" id="dlLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-dl-loss"></figure>
+    <figure class="card" id="c-dl-acc"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid3">
+    <figure class="card" id="c-dl-util"></figure>
+    <figure class="card" id="c-dl-power"></figure>
+    <figure class="card" id="c-dl-mem"></figure>
+  </div>
+
+  <h2>强化学习训练 <span class="tag">DQN · CartPole-v1 · gymnasium</span></h2>
+  <p class="lede" id="rlLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-rl-reward"></figure>
+    <figure class="card" id="c-rl-eps"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-rl-loss"></figure>
+    <figure class="card" id="c-rl-greedy"></figure>
+  </div>
+
+  <h2>策略回放 <span class="tag">训练不同阶段的贪心策略 · 动画</span></h2>
+  <p class="lede">每个检查点用当时的网络权重贪心（无探索）跑一局，记录小车位置与杆角。杆保持竖直的时间越长，策略越好 —— 可直观看到从几步就倒，到接近满分的过程。</p>
+  <figure class="card">
+    <div class="cp-controls" id="cpBtns"></div>
+    <div class="cp-meta" id="cpMeta"></div>
+    <canvas id="cpCanvas" width="1040" height="240"></canvas>
+  </figure>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = {"dl": {"gpu": "NVIDIA H20", "torch": "2.5.0a0+872d972e41.nv24.08", "cuda": "12.6", "epochs": 5, "batch_size": 512, "model": "ResNet-18 (CIFAR stem)", "dataset": "CIFAR-10", "phase_start": 1784865619.831913, "steps": [{"step": 10, "loss": 2.2112, "lr": 0.01026}, {"step": 20, "loss": 2.0083, "lr": 0.01693}, {"step": 30, "loss": 1.8555, "lr": 0.02771}, {"step": 40, "loss": 2.0666, "lr": 0.04207}, {"step": 50, "loss": 2.8138, "lr": 0.05935}, {"step": 60, "loss": 1.805, "lr": 0.07873}, {"step": 70, "loss": 1.7262, "lr": 0.09931}, {"step": 80, "loss": 1.7678, "lr": 0.1201}, {"step": 90, "loss": 1.7453, "lr": 0.14013}, {"step": 100, "loss": 1.5655, "lr": 0.15847}, {"step": 110, "loss": 1.5908, "lr": 0.17424}, {"step": 120, "loss": 1.4972, "lr": 0.1867}, {"step": 130, "loss": 1.5604, "lr": 0.19527}, {"step": 140, "loss": 1.5131, "lr": 0.19954}, {"step": 150, "loss": 1.3941, "lr": 0.19987}, {"step": 160, "loss": 1.4136, "lr": 0.19897}, {"step": 170, "loss": 1.3671, "lr": 0.19723}, {"step": 180, "loss": 1.2928, "lr": 0.19465}, {"step": 190, "loss": 1.372, "lr": 0.19127}, {"step": 200, "loss": 1.2426, "lr": 0.1871}, {"step": 210, "loss": 1.3291, "lr": 0.18219}, {"step": 220, "loss": 1.1891, "lr": 0.17657}, {"step": 230, "loss": 1.2769, "lr": 0.1703}, {"step": 240, "loss": 1.2005, "lr": 0.16343}, {"step": 250, "loss": 1.1417, "lr": 0.15601}, {"step": 260, "loss": 1.1616, "lr": 0.14812}, {"step": 270, "loss": 1.0953, "lr": 0.13981}, {"step": 280, "loss": 1.0445, "lr": 0.13117}, {"step": 290, "loss": 1.0812, "lr": 0.12225}, {"step": 300, "loss": 1.0262, "lr": 0.11315}, {"step": 310, "loss": 1.0521, "lr": 0.10393}, {"step": 320, "loss": 1.025, "lr": 0.09468}, {"step": 330, "loss": 1.0018, "lr": 0.08548}, {"step": 340, "loss": 1.0398, "lr": 0.0764}, {"step": 350, "loss": 0.981, "lr": 0.06752}, {"step": 360, "loss": 1.0243, "lr": 0.05892}, {"step": 370, "loss": 0.904, "lr": 0.05067}, {"step": 380, "loss": 0.9319, "lr": 0.04284}, {"step": 390, "loss": 0.9462, "lr": 0.03551}, {"step": 400, "loss": 0.9428, "lr": 0.02872}, {"step": 410, "loss": 0.9288, "lr": 0.02254}, {"step": 420, "loss": 0.8891, "lr": 0.01703}, {"step": 430, "loss": 0.9092, "lr": 0.01223}, {"step": 440, "loss": 0.9188, "lr": 0.00818}, {"step": 450, "loss": 0.8613, "lr": 0.00491}, {"step": 460, "loss": 0.9095, "lr": 0.00246}, {"step": 470, "loss": 0.8984, "lr": 0.00084}, {"step": 480, "loss": 0.8656, "lr": 7e-05}], "epoch_stats": [{"epoch": 1, "train_loss": 2.0016, "test_acc": 0.4348, "images_per_sec": 15193, "epoch_seconds": 3.3}, {"epoch": 2, "train_loss": 1.4611, "test_acc": 0.6011, "images_per_sec": 21429, "epoch_seconds": 2.3}, {"epoch": 3, "train_loss": 1.1671, "test_acc": 0.6986, "images_per_sec": 21509, "epoch_seconds": 2.3}, {"epoch": 4, "train_loss": 1.0022, "test_acc": 0.7757, "images_per_sec": 21523, "epoch_seconds": 2.3}, {"epoch": 5, "train_loss": 0.8996, "test_acc": 0.8314, "images_per_sec": 21464, "epoch_seconds": 2.3}], "phase_end": 1784865634.045795, "final_acc": 0.8314, "max_mem_gb": 1.53}, "rl": {"algo": "DQN", "env": "CartPole-v1", "device": "cuda:0", "gpu": "NVIDIA H20", "episodes": 400, "solved_avg": 475.0, "phase_start": 1784865636.3091066, "episode_stats": [{"episode": 1, "reward": 17.0, "avg100": 17.0, "epsilon": 0.998, "loss": null}, {"episode": 2, "reward": 16.0, "avg100": 16.5, "epsilon": 0.996, "loss": null}, {"episode": 3, "reward": 22.0, "avg100": 18.3, "epsilon": 0.993, "loss": null}, {"episode": 4, "reward": 11.0, "avg100": 16.5, "epsilon": 0.992, "loss": null}, {"episode": 5, "reward": 45.0, "avg100": 22.2, "epsilon": 0.987, "loss": null}, {"episode": 6, "reward": 21.0, "avg100": 22.0, "epsilon": 0.984, "loss": null}, {"episode": 7, "reward": 22.0, "avg100": 22.0, "epsilon": 0.981, "loss": null}, {"episode": 8, "reward": 37.0, "avg100": 23.9, "epsilon": 0.977, "loss": null}, {"episode": 9, "reward": 12.0, "avg100": 22.6, "epsilon": 0.976, "loss": null}, {"episode": 10, "reward": 27.0, "avg100": 23.0, "epsilon": 0.972, "loss": null}, {"episode": 11, "reward": 12.0, "avg100": 22.0, "epsilon": 0.971, "loss": null}, {"episode": 12, "reward": 15.0, "avg100": 21.4, "epsilon": 0.969, "loss": null}, {"episode": 13, "reward": 16.0, "avg100": 21.0, "epsilon": 0.967, "loss": null}, {"episode": 14, "reward": 23.0, "avg100": 21.1, "epsilon": 0.965, "loss": null}, {"episode": 15, "reward": 16.0, "avg100": 20.8, "epsilon": 0.963, "loss": null}, {"episode": 16, "reward": 16.0, "avg100": 20.5, "epsilon": 0.961, "loss": null}, {"episode": 17, "reward": 13.0, "avg100": 20.1, "epsilon": 0.959, "loss": null}, {"episode": 18, "reward": 40.0, "avg100": 21.2, "epsilon": 0.955, "loss": null}, {"episode": 19, "reward": 102.0, "avg100": 25.4, "epsilon": 0.943, "loss": null}, {"episode": 20, "reward": 29.0, "avg100": 25.6, "epsilon": 0.939, "loss": null}, {"episode": 21, "reward": 16.0, "avg100": 25.1, "epsilon": 0.938, "loss": null}, {"episode": 22, "reward": 37.0, "avg100": 25.7, "epsilon": 0.933, "loss": null}, {"episode": 23, "reward": 12.0, "avg100": 25.1, "epsilon": 0.932, "loss": null}, {"episode": 24, "reward": 11.0, "avg100": 24.5, "epsilon": 0.931, "loss": null}, {"episode": 25, "reward": 11.0, "avg100": 24.0, "epsilon": 0.929, "loss": null}, {"episode": 26, "reward": 15.0, "avg100": 23.6, "epsilon": 0.928, "loss": null}, {"episode": 27, "reward": 28.0, "avg100": 23.8, "epsilon": 0.925, "loss": null}, {"episode": 28, "reward": 16.0, "avg100": 23.5, "epsilon": 0.923, "loss": null}, {"episode": 29, "reward": 27.0, "avg100": 23.6, "epsilon": 0.92, "loss": null}, {"episode": 30, "reward": 14.0, "avg100": 23.3, "epsilon": 0.918, "loss": null}, {"episode": 31, "reward": 33.0, "avg100": 23.6, "epsilon": 0.914, "loss": null}, {"episode": 32, "reward": 67.0, "avg100": 25.0, "epsilon": 0.907, "loss": null}, {"episode": 33, "reward": 62.0, "avg100": 26.1, "epsilon": 0.9, "loss": null}, {"episode": 34, "reward": 12.0, "avg100": 25.7, "epsilon": 0.899, "loss": null}, {"episode": 35, "reward": 30.0, "avg100": 25.8, "epsilon": 0.896, "loss": null}, {"episode": 36, "reward": 25.0, "avg100": 25.8, "epsilon": 0.893, "loss": null}, {"episode": 37, "reward": 22.0, "avg100": 25.7, "epsilon": 0.89, "loss": null}, {"episode": 38, "reward": 14.0, "avg100": 25.4, "epsilon": 0.889, "loss": null}, {"episode": 39, "reward": 19.0, "avg100": 25.2, "epsilon": 0.887, "loss": null}, {"episode": 40, "reward": 24.0, "avg100": 25.2, "epsilon": 0.884, "loss": 0.39923}, {"episode": 41, "reward": 18.0, "avg100": 25.0, "epsilon": 0.882, "loss": 0.08114}, {"episode": 42, "reward": 13.0, "avg100": 24.7, "epsilon": 0.881, "loss": 0.02816}, {"episode": 43, "reward": 15.0, "avg100": 24.5, "epsilon": 0.879, "loss": 0.00833}, {"episode": 44, "reward": 24.0, "avg100": 24.5, "epsilon": 0.877, "loss": 0.00157}, {"episode": 45, "reward": 23.0, "avg100": 24.4, "epsilon": 0.874, "loss": 0.00032}, {"episode": 46, "reward": 17.0, "avg100": 24.3, "epsilon": 0.872, "loss": 0.00023}, {"episode": 47, "reward": 16.0, "avg100": 24.1, "epsilon": 0.871, "loss": 0.00018}, {"episode": 48, "reward": 13.0, "avg100": 23.9, "epsilon": 0.869, "loss": 0.00014}, {"episode": 49, "reward": 20.0, "avg100": 23.8, "epsilon": 0.867, "loss": 0.00013}, {"episode": 50, "reward": 23.0, "avg100": 23.8, "epsilon": 0.865, "loss": 0.00012}, {"episode": 51, "reward": 12.0, "avg100": 23.5, "epsilon": 0.863, "loss": 0.00011}, {"episode": 52, "reward": 21.0, "avg100": 23.5, "epsilon": 0.861, "loss": 0.00012}, {"episode": 53, "reward": 28.0, "avg100": 23.6, "epsilon": 0.858, "loss": 0.0001}, {"episode": 54, "reward": 17.0, "avg100": 23.5, "epsilon": 0.857, "loss": 0.0001}, {"episode": 55, "reward": 28.0, "avg100": 23.5, "epsilon": 0.854, "loss": 0.0001}, {"episode": 56, "reward": 39.0, "avg100": 23.8, "epsilon": 0.85, "loss": 9e-05}, {"episode": 57, "reward": 27.0, "avg100": 23.9, "epsilon": 0.847, "loss": 9e-05}, {"episode": 58, "reward": 26.0, "avg100": 23.9, "epsilon": 0.844, "loss": 8e-05}, {"episode": 59, "reward": 24.0, "avg100": 23.9, "epsilon": 0.842, "loss": 9e-05}, {"episode": 60, "reward": 23.0, "avg100": 23.9, "epsilon": 0.839, "loss": 9e-05}, {"episode": 61, "reward": 13.0, "avg100": 23.7, "epsilon": 0.838, "loss": 8e-05}, {"episode": 62, "reward": 59.0, "avg100": 24.3, "epsilon": 0.832, "loss": 0.0238}, {"episode": 63, "reward": 28.0, "avg100": 24.3, "epsilon": 0.829, "loss": 0.05246}, {"episode": 64, "reward": 15.0, "avg100": 24.2, "epsilon": 0.828, "loss": 0.02067}, {"episode": 65, "reward": 18.0, "avg100": 24.1, "epsilon": 0.826, "loss": 0.01333}, {"episode": 66, "reward": 13.0, "avg100": 23.9, "epsilon": 0.824, "loss": 0.01357}, {"episode": 67, "reward": 24.0, "avg100": 23.9, "epsilon": 0.822, "loss": 0.01342}, {"episode": 68, "reward": 29.0, "avg100": 24.0, "epsilon": 0.819, "loss": 0.01424}, {"episode": 69, "reward": 15.0, "avg100": 23.9, "epsilon": 0.818, "loss": 0.01225}, {"episode": 70, "reward": 14.0, "avg100": 23.7, "epsilon": 0.816, "loss": 0.01025}, {"episode": 71, "reward": 28.0, "avg100": 23.8, "epsilon": 0.813, "loss": 0.0123}, {"episode": 72, "reward": 23.0, "avg100": 23.8, "epsilon": 0.811, "loss": 0.01146}, {"episode": 73, "reward": 13.0, "avg100": 23.6, "epsilon": 0.81, "loss": 0.0135}, {"episode": 74, "reward": 19.0, "avg100": 23.6, "epsilon": 0.808, "loss": 0.01191}, {"episode": 75, "reward": 19.0, "avg100": 23.5, "epsilon": 0.806, "loss": 0.01141}, {"episode": 76, "reward": 13.0, "avg100": 23.4, "epsilon": 0.805, "loss": 0.01298}, {"episode": 77, "reward": 13.0, "avg100": 23.2, "epsilon": 0.804, "loss": 0.01319}, {"episode": 78, "reward": 15.0, "avg100": 23.1, "epsilon": 0.802, "loss": 0.0116}, {"episode": 79, "reward": 11.0, "avg100": 23.0, "epsilon": 0.801, "loss": 0.0112}, {"episode": 80, "reward": 17.0, "avg100": 22.9, "epsilon": 0.799, "loss": 0.01133}, {"episode": 81, "reward": 41.0, "avg100": 23.1, "epsilon": 0.795, "loss": 0.01072}, {"episode": 82, "reward": 17.0, "avg100": 23.1, "epsilon": 0.794, "loss": 0.01059}, {"episode": 83, "reward": 11.0, "avg100": 22.9, "epsilon": 0.793, "loss": 0.01025}, {"episode": 84, "reward": 35.0, "avg100": 23.1, "epsilon": 0.789, "loss": 0.01052}, {"episode": 85, "reward": 21.0, "avg100": 23.0, "epsilon": 0.787, "loss": 0.01082}, {"episode": 86, "reward": 12.0, "avg100": 22.9, "epsilon": 0.786, "loss": 0.011}, {"episode": 87, "reward": 13.0, "avg100": 22.8, "epsilon": 0.785, "loss": 0.01271}, {"episode": 88, "reward": 14.0, "avg100": 22.7, "epsilon": 0.784, "loss": 0.01001}, {"episode": 89, "reward": 16.0, "avg100": 22.6, "epsilon": 0.782, "loss": 0.1321}, {"episode": 90, "reward": 19.0, "avg100": 22.6, "epsilon": 0.78, "loss": 0.0506}, {"episode": 91, "reward": 10.0, "avg100": 22.4, "epsilon": 0.779, "loss": 0.03323}, {"episode": 92, "reward": 36.0, "avg100": 22.6, "epsilon": 0.776, "loss": 0.02781}, {"episode": 93, "reward": 20.0, "avg100": 22.6, "epsilon": 0.774, "loss": 0.02377}, {"episode": 94, "reward": 8.0, "avg100": 22.4, "epsilon": 0.773, "loss": 0.02368}, {"episode": 95, "reward": 64.0, "avg100": 22.8, "epsilon": 0.767, "loss": 0.02422}, {"episode": 96, "reward": 21.0, "avg100": 22.8, "epsilon": 0.765, "loss": 0.02293}, {"episode": 97, "reward": 22.0, "avg100": 22.8, "epsilon": 0.763, "loss": 0.02221}, {"episode": 98, "reward": 11.0, "avg100": 22.7, "epsilon": 0.762, "loss": 0.02483}, {"episode": 99, "reward": 18.0, "avg100": 22.6, "epsilon": 0.761, "loss": 0.02094}, {"episode": 100, "reward": 17.0, "avg100": 22.6, "epsilon": 0.759, "loss": 0.02547}, {"episode": 101, "reward": 19.0, "avg100": 22.6, "epsilon": 0.757, "loss": 0.02349}, {"episode": 102, "reward": 29.0, "avg100": 22.7, "epsilon": 0.755, "loss": 0.02186}, {"episode": 103, "reward": 20.0, "avg100": 22.7, "epsilon": 0.753, "loss": 0.02742}, {"episode": 104, "reward": 58.0, "avg100": 23.2, "epsilon": 0.747, "loss": 0.02108}, {"episode": 105, "reward": 43.0, "avg100": 23.2, "epsilon": 0.744, "loss": 0.02035}, {"episode": 106, "reward": 36.0, "avg100": 23.3, "epsilon": 0.74, "loss": 0.01926}, {"episode": 107, "reward": 16.0, "avg100": 23.3, "epsilon": 0.739, "loss": 0.01748}, {"episode": 108, "reward": 22.0, "avg100": 23.1, "epsilon": 0.737, "loss": 0.0524}, {"episode": 109, "reward": 43.0, "avg100": 23.4, "epsilon": 0.733, "loss": 0.05968}, {"episode": 110, "reward": 25.0, "avg100": 23.4, "epsilon": 0.731, "loss": 0.0279}, {"episode": 111, "reward": 23.0, "avg100": 23.5, "epsilon": 0.729, "loss": 0.02672}, {"episode": 112, "reward": 39.0, "avg100": 23.8, "epsilon": 0.725, "loss": 0.0233}, {"episode": 113, "reward": 21.0, "avg100": 23.8, "epsilon": 0.723, "loss": 0.02729}, {"episode": 114, "reward": 15.0, "avg100": 23.7, "epsilon": 0.722, "loss": 0.02656}, {"episode": 115, "reward": 42.0, "avg100": 24.0, "epsilon": 0.718, "loss": 0.02207}, {"episode": 116, "reward": 31.0, "avg100": 24.1, "epsilon": 0.716, "loss": 0.02788}, {"episode": 117, "reward": 19.0, "avg100": 24.2, "epsilon": 0.714, "loss": 0.02281}, {"episode": 118, "reward": 15.0, "avg100": 23.9, "epsilon": 0.713, "loss": 0.02407}, {"episode": 119, "reward": 15.0, "avg100": 23.1, "epsilon": 0.712, "loss": 0.02047}, {"episode": 120, "reward": 13.0, "avg100": 22.9, "epsilon": 0.71, "loss": 0.02179}, {"episode": 121, "reward": 24.0, "avg100": 23.0, "epsilon": 0.708, "loss": 0.02743}, {"episode": 122, "reward": 14.0, "avg100": 22.8, "epsilon": 0.707, "loss": 0.02225}, {"episode": 123, "reward": 41.0, "avg100": 23.1, "epsilon": 0.704, "loss": 0.02489}, {"episode": 124, "reward": 76.0, "avg100": 23.7, "epsilon": 0.697, "loss": 0.0219}, {"episode": 125, "reward": 49.0, "avg100": 24.1, "epsilon": 0.693, "loss": 0.05077}, {"episode": 126, "reward": 27.0, "avg100": 24.2, "epsilon": 0.691, "loss": 0.05498}, {"episode": 127, "reward": 18.0, "avg100": 24.1, "epsilon": 0.689, "loss": 0.03293}, {"episode": 128, "reward": 20.0, "avg100": 24.1, "epsilon": 0.688, "loss": 0.02724}, {"episode": 129, "reward": 50.0, "avg100": 24.4, "epsilon": 0.683, "loss": 0.02697}, {"episode": 130, "reward": 10.0, "avg100": 24.3, "epsilon": 0.683, "loss": 0.03424}, {"episode": 131, "reward": 12.0, "avg100": 24.1, "epsilon": 0.682, "loss": 0.02394}, {"episode": 132, "reward": 26.0, "avg100": 23.7, "epsilon": 0.679, "loss": 0.02311}, {"episode": 133, "reward": 32.0, "avg100": 23.4, "epsilon": 0.677, "loss": 0.02779}, {"episode": 134, "reward": 20.0, "avg100": 23.5, "epsilon": 0.675, "loss": 0.03149}, {"episode": 135, "reward": 24.0, "avg100": 23.4, "epsilon": 0.673, "loss": 0.02317}, {"episode": 136, "reward": 20.0, "avg100": 23.4, "epsilon": 0.672, "loss": 0.02208}, {"episode": 137, "reward": 22.0, "avg100": 23.4, "epsilon": 0.67, "loss": 0.02528}, {"episode": 138, "reward": 11.0, "avg100": 23.4, "epsilon": 0.669, "loss": 0.02663}, {"episode": 139, "reward": 35.0, "avg100": 23.5, "epsilon": 0.666, "loss": 0.02536}, {"episode": 140, "reward": 25.0, "avg100": 23.5, "epsilon": 0.664, "loss": 0.02338}, {"episode": 141, "reward": 67.0, "avg100": 24.0, "epsilon": 0.659, "loss": 0.02453}, {"episode": 142, "reward": 78.0, "avg100": 24.7, "epsilon": 0.652, "loss": 0.03672}, {"episode": 143, "reward": 22.0, "avg100": 24.7, "epsilon": 0.651, "loss": 0.09043}, {"episode": 144, "reward": 23.0, "avg100": 24.7, "epsilon": 0.649, "loss": 0.03768}, {"episode": 145, "reward": 53.0, "avg100": 25.0, "epsilon": 0.645, "loss": 0.03415}, {"episode": 146, "reward": 42.0, "avg100": 25.3, "epsilon": 0.642, "loss": 0.03306}, {"episode": 147, "reward": 16.0, "avg100": 25.3, "epsilon": 0.64, "loss": 0.02983}, {"episode": 148, "reward": 28.0, "avg100": 25.4, "epsilon": 0.638, "loss": 0.03084}, {"episode": 149, "reward": 25.0, "avg100": 25.5, "epsilon": 0.636, "loss": 0.03381}, {"episode": 150, "reward": 18.0, "avg100": 25.4, "epsilon": 0.635, "loss": 0.03044}, {"episode": 151, "reward": 19.0, "avg100": 25.5, "epsilon": 0.633, "loss": 0.02787}, {"episode": 152, "reward": 12.0, "avg100": 25.4, "epsilon": 0.632, "loss": 0.02715}, {"episode": 153, "reward": 71.0, "avg100": 25.8, "epsilon": 0.627, "loss": 0.03084}, {"episode": 154, "reward": 36.0, "avg100": 26.0, "epsilon": 0.624, "loss": 0.0281}, {"episode": 155, "reward": 62.0, "avg100": 26.4, "epsilon": 0.62, "loss": 0.02667}, {"episode": 156, "reward": 28.0, "avg100": 26.2, "epsilon": 0.618, "loss": 0.02773}, {"episode": 157, "reward": 35.0, "avg100": 26.3, "epsilon": 0.615, "loss": 0.0291}, {"episode": 158, "reward": 11.0, "avg100": 26.2, "epsilon": 0.614, "loss": 0.10059}, {"episode": 159, "reward": 27.0, "avg100": 26.2, "epsilon": 0.612, "loss": 0.09061}, {"episode": 160, "reward": 48.0, "avg100": 26.5, "epsilon": 0.609, "loss": 0.03262}, {"episode": 161, "reward": 70.0, "avg100": 27.0, "epsilon": 0.603, "loss": 0.03062}, {"episode": 162, "reward": 40.0, "avg100": 26.8, "epsilon": 0.601, "loss": 0.02907}, {"episode": 163, "reward": 18.0, "avg100": 26.7, "epsilon": 0.599, "loss": 0.02651}, {"episode": 164, "reward": 10.0, "avg100": 26.7, "epsilon": 0.598, "loss": 0.03669}, {"episode": 165, "reward": 23.0, "avg100": 26.7, "epsilon": 0.597, "loss": 0.02707}, {"episode": 166, "reward": 38.0, "avg100": 27.0, "epsilon": 0.594, "loss": 0.03099}, {"episode": 167, "reward": 20.0, "avg100": 26.9, "epsilon": 0.593, "loss": 0.03311}, {"episode": 168, "reward": 12.0, "avg100": 26.8, "epsilon": 0.592, "loss": 0.03034}, {"episode": 169, "reward": 44.0, "avg100": 27.1, "epsilon": 0.589, "loss": 0.02852}, {"episode": 170, "reward": 35.0, "avg100": 27.3, "epsilon": 0.586, "loss": 0.03077}, {"episode": 171, "reward": 32.0, "avg100": 27.3, "epsilon": 0.584, "loss": 0.02758}, {"episode": 172, "reward": 13.0, "avg100": 27.2, "epsilon": 0.583, "loss": 0.03033}, {"episode": 173, "reward": 19.0, "avg100": 27.3, "epsilon": 0.582, "loss": 0.03655}, {"episode": 174, "reward": 47.0, "avg100": 27.6, "epsilon": 0.578, "loss": 0.03929}, {"episode": 175, "reward": 13.0, "avg100": 27.5, "epsilon": 0.577, "loss": 0.13811}, {"episode": 176, "reward": 37.0, "avg100": 27.7, "epsilon": 0.575, "loss": 0.0596}, {"episode": 177, "reward": 194.0, "avg100": 29.6, "epsilon": 0.562, "loss": 0.03899}, {"episode": 178, "reward": 51.0, "avg100": 29.9, "epsilon": 0.558, "loss": 0.03393}, {"episode": 179, "reward": 74.0, "avg100": 30.5, "epsilon": 0.553, "loss": 0.03461}, {"episode": 180, "reward": 17.0, "avg100": 30.5, "epsilon": 0.552, "loss": 0.042}, {"episode": 181, "reward": 110.0, "avg100": 31.2, "epsilon": 0.545, "loss": 0.03304}, {"episode": 182, "reward": 23.0, "avg100": 31.3, "epsilon": 0.543, "loss": 0.14032}, {"episode": 183, "reward": 51.0, "avg100": 31.7, "epsilon": 0.54, "loss": 0.0523}, {"episode": 184, "reward": 65.0, "avg100": 32.0, "epsilon": 0.536, "loss": 0.04601}, {"episode": 185, "reward": 39.0, "avg100": 32.2, "epsilon": 0.533, "loss": 0.03583}, {"episode": 186, "reward": 38.0, "avg100": 32.4, "epsilon": 0.531, "loss": 0.04773}, {"episode": 187, "reward": 22.0, "avg100": 32.5, "epsilon": 0.529, "loss": 0.0362}, {"episode": 188, "reward": 36.0, "avg100": 32.7, "epsilon": 0.527, "loss": 0.03909}, {"episode": 189, "reward": 34.0, "avg100": 32.9, "epsilon": 0.525, "loss": 0.04008}, {"episode": 190, "reward": 123.0, "avg100": 34.0, "epsilon": 0.517, "loss": 0.03949}, {"episode": 191, "reward": 41.0, "avg100": 34.3, "epsilon": 0.515, "loss": 0.04917}, {"episode": 192, "reward": 24.0, "avg100": 34.1, "epsilon": 0.513, "loss": 0.0429}, {"episode": 193, "reward": 24.0, "avg100": 34.2, "epsilon": 0.512, "loss": 0.1308}, {"episode": 194, "reward": 20.0, "avg100": 34.3, "epsilon": 0.511, "loss": 0.0943}, {"episode": 195, "reward": 21.0, "avg100": 33.9, "epsilon": 0.509, "loss": 0.05147}, {"episode": 196, "reward": 290.0, "avg100": 36.6, "epsilon": 0.492, "loss": 0.045}, {"episode": 197, "reward": 70.0, "avg100": 37.0, "epsilon": 0.488, "loss": 0.04248}, {"episode": 198, "reward": 79.0, "avg100": 37.7, "epsilon": 0.483, "loss": 0.04385}, {"episode": 199, "reward": 49.0, "avg100": 38.0, "epsilon": 0.48, "loss": 0.10406}, {"episode": 200, "reward": 84.0, "avg100": 38.7, "epsilon": 0.476, "loss": 0.06192}, {"episode": 201, "reward": 172.0, "avg100": 40.2, "epsilon": 0.466, "loss": 0.05402}, {"episode": 202, "reward": 18.0, "avg100": 40.1, "epsilon": 0.465, "loss": 0.06579}, {"episode": 203, "reward": 12.0, "avg100": 40.0, "epsilon": 0.464, "loss": 0.05928}, {"episode": 204, "reward": 20.0, "avg100": 39.7, "epsilon": 0.463, "loss": 0.07194}, {"episode": 205, "reward": 42.0, "avg100": 39.7, "epsilon": 0.461, "loss": 0.05662}, {"episode": 206, "reward": 100.0, "avg100": 40.3, "epsilon": 0.455, "loss": 0.05599}, {"episode": 207, "reward": 21.0, "avg100": 40.4, "epsilon": 0.454, "loss": 0.15769}, {"episode": 208, "reward": 29.0, "avg100": 40.4, "epsilon": 0.453, "loss": 0.07656}, {"episode": 209, "reward": 13.0, "avg100": 40.1, "epsilon": 0.452, "loss": 0.08089}, {"episode": 210, "reward": 92.0, "avg100": 40.8, "epsilon": 0.447, "loss": 0.06152}, {"episode": 211, "reward": 89.0, "avg100": 41.5, "epsilon": 0.442, "loss": 0.07069}, {"episode": 212, "reward": 93.0, "avg100": 42.0, "epsilon": 0.437, "loss": 0.05982}, {"episode": 213, "reward": 65.0, "avg100": 42.4, "epsilon": 0.434, "loss": 0.06359}, {"episode": 214, "reward": 11.0, "avg100": 42.4, "epsilon": 0.433, "loss": 0.07566}, {"episode": 215, "reward": 120.0, "avg100": 43.2, "epsilon": 0.427, "loss": 0.08676}, {"episode": 216, "reward": 101.0, "avg100": 43.9, "epsilon": 0.422, "loss": 0.08443}, {"episode": 217, "reward": 62.0, "avg100": 44.3, "epsilon": 0.419, "loss": 0.06996}, {"episode": 218, "reward": 16.0, "avg100": 44.3, "epsilon": 0.418, "loss": 0.06804}, {"episode": 219, "reward": 13.0, "avg100": 44.3, "epsilon": 0.418, "loss": 0.06849}, {"episode": 220, "reward": 23.0, "avg100": 44.4, "epsilon": 0.416, "loss": 0.07578}, {"episode": 221, "reward": 74.0, "avg100": 44.9, "epsilon": 0.413, "loss": 0.07303}, {"episode": 222, "reward": 21.0, "avg100": 45.0, "epsilon": 0.412, "loss": 0.06994}, {"episode": 223, "reward": 101.0, "avg100": 45.6, "epsilon": 0.407, "loss": 0.0789}, {"episode": 224, "reward": 45.0, "avg100": 45.2, "epsilon": 0.405, "loss": 0.07797}, {"episode": 225, "reward": 96.0, "avg100": 45.7, "epsilon": 0.4, "loss": 0.09884}, {"episode": 226, "reward": 77.0, "avg100": 46.2, "epsilon": 0.396, "loss": 0.09174}, {"episode": 227, "reward": 14.0, "avg100": 46.2, "epsilon": 0.396, "loss": 0.08098}, {"episode": 228, "reward": 56.0, "avg100": 46.5, "epsilon": 0.393, "loss": 0.08352}, {"episode": 229, "reward": 12.0, "avg100": 46.2, "epsilon": 0.393, "loss": 0.05585}, {"episode": 230, "reward": 52.0, "avg100": 46.6, "epsilon": 0.39, "loss": 0.08143}, {"episode": 231, "reward": 12.0, "avg100": 46.6, "epsilon": 0.39, "loss": 0.09325}, {"episode": 232, "reward": 41.0, "avg100": 46.7, "epsilon": 0.388, "loss": 0.0672}, {"episode": 233, "reward": 20.0, "avg100": 46.6, "epsilon": 0.387, "loss": 0.07155}, {"episode": 234, "reward": 101.0, "avg100": 47.4, "epsilon": 0.382, "loss": 0.07883}, {"episode": 235, "reward": 18.0, "avg100": 47.4, "epsilon": 0.381, "loss": 0.07884}, {"episode": 236, "reward": 16.0, "avg100": 47.3, "epsilon": 0.381, "loss": 0.0599}, {"episode": 237, "reward": 147.0, "avg100": 48.6, "epsilon": 0.374, "loss": 0.1252}, {"episode": 238, "reward": 42.0, "avg100": 48.9, "epsilon": 0.372, "loss": 0.08491}, {"episode": 239, "reward": 16.0, "avg100": 48.7, "epsilon": 0.372, "loss": 0.08969}, {"episode": 240, "reward": 23.0, "avg100": 48.7, "epsilon": 0.371, "loss": 0.13195}, {"episode": 241, "reward": 10.0, "avg100": 48.1, "epsilon": 0.37, "loss": 0.12216}, {"episode": 242, "reward": 17.0, "avg100": 47.5, "epsilon": 0.369, "loss": 0.09033}, {"episode": 243, "reward": 73.0, "avg100": 48.0, "epsilon": 0.366, "loss": 0.09319}, {"episode": 244, "reward": 31.0, "avg100": 48.1, "epsilon": 0.365, "loss": 0.08061}, {"episode": 245, "reward": 16.0, "avg100": 47.7, "epsilon": 0.364, "loss": 0.07887}, {"episode": 246, "reward": 24.0, "avg100": 47.5, "epsilon": 0.363, "loss": 0.0901}, {"episode": 247, "reward": 32.0, "avg100": 47.7, "epsilon": 0.362, "loss": 0.07881}, {"episode": 248, "reward": 21.0, "avg100": 47.6, "epsilon": 0.361, "loss": 0.09203}, {"episode": 249, "reward": 113.0, "avg100": 48.5, "epsilon": 0.356, "loss": 0.13024}, {"episode": 250, "reward": 23.0, "avg100": 48.5, "epsilon": 0.355, "loss": 0.1095}, {"episode": 251, "reward": 112.0, "avg100": 49.5, "epsilon": 0.35, "loss": 0.10872}, {"episode": 252, "reward": 49.0, "avg100": 49.9, "epsilon": 0.348, "loss": 0.10762}, {"episode": 253, "reward": 15.0, "avg100": 49.3, "epsilon": 0.348, "loss": 0.08308}, {"episode": 254, "reward": 67.0, "avg100": 49.6, "epsilon": 0.345, "loss": 0.11159}, {"episode": 255, "reward": 17.0, "avg100": 49.1, "epsilon": 0.344, "loss": 0.14169}, {"episode": 256, "reward": 24.0, "avg100": 49.1, "epsilon": 0.343, "loss": 0.0964}, {"episode": 257, "reward": 22.0, "avg100": 49.0, "epsilon": 0.343, "loss": 0.09284}, {"episode": 258, "reward": 116.0, "avg100": 50.0, "epsilon": 0.338, "loss": 0.11708}, {"episode": 259, "reward": 101.0, "avg100": 50.8, "epsilon": 0.334, "loss": 0.13645}, {"episode": 260, "reward": 92.0, "avg100": 51.2, "epsilon": 0.33, "loss": 0.12049}, {"episode": 261, "reward": 103.0, "avg100": 51.5, "epsilon": 0.326, "loss": 0.12719}, {"episode": 262, "reward": 45.0, "avg100": 51.6, "epsilon": 0.325, "loss": 0.1215}, {"episode": 263, "reward": 17.0, "avg100": 51.6, "epsilon": 0.324, "loss": 0.1206}, {"episode": 264, "reward": 27.0, "avg100": 51.8, "epsilon": 0.323, "loss": 0.10869}, {"episode": 265, "reward": 18.0, "avg100": 51.7, "epsilon": 0.322, "loss": 0.11418}, {"episode": 266, "reward": 112.0, "avg100": 52.4, "epsilon": 0.318, "loss": 0.14236}, {"episode": 267, "reward": 44.0, "avg100": 52.7, "epsilon": 0.316, "loss": 0.12656}, {"episode": 268, "reward": 32.0, "avg100": 52.9, "epsilon": 0.315, "loss": 0.14786}, {"episode": 269, "reward": 14.0, "avg100": 52.6, "epsilon": 0.315, "loss": 0.11677}, {"episode": 270, "reward": 18.0, "avg100": 52.4, "epsilon": 0.314, "loss": 0.12093}, {"episode": 271, "reward": 100.0, "avg100": 53.1, "epsilon": 0.31, "loss": 0.12871}, {"episode": 272, "reward": 113.0, "avg100": 54.1, "epsilon": 0.306, "loss": 0.12209}, {"episode": 273, "reward": 22.0, "avg100": 54.1, "epsilon": 0.306, "loss": 0.14165}, {"episode": 274, "reward": 14.0, "avg100": 53.8, "epsilon": 0.305, "loss": 0.13373}, {"episode": 275, "reward": 113.0, "avg100": 54.8, "epsilon": 0.301, "loss": 0.13906}, {"episode": 276, "reward": 117.0, "avg100": 55.6, "epsilon": 0.297, "loss": 0.14751}, {"episode": 277, "reward": 104.0, "avg100": 54.7, "epsilon": 0.293, "loss": 0.14237}, {"episode": 278, "reward": 28.0, "avg100": 54.5, "epsilon": 0.292, "loss": 0.15014}, {"episode": 279, "reward": 22.0, "avg100": 53.9, "epsilon": 0.292, "loss": 0.1703}, {"episode": 280, "reward": 20.0, "avg100": 54.0, "epsilon": 0.291, "loss": 0.10924}, {"episode": 281, "reward": 113.0, "avg100": 54.0, "epsilon": 0.287, "loss": 0.13131}, {"episode": 282, "reward": 86.0, "avg100": 54.6, "epsilon": 0.284, "loss": 0.13764}, {"episode": 283, "reward": 132.0, "avg100": 55.4, "epsilon": 0.28, "loss": 0.16494}, {"episode": 284, "reward": 13.0, "avg100": 54.9, "epsilon": 0.28, "loss": 0.18523}, {"episode": 285, "reward": 49.0, "avg100": 55.0, "epsilon": 0.278, "loss": 0.13462}, {"episode": 286, "reward": 36.0, "avg100": 55.0, "epsilon": 0.277, "loss": 0.18108}, {"episode": 287, "reward": 20.0, "avg100": 55.0, "epsilon": 0.276, "loss": 0.1779}, {"episode": 288, "reward": 30.0, "avg100": 54.9, "epsilon": 0.275, "loss": 0.14247}, {"episode": 289, "reward": 105.0, "avg100": 55.6, "epsilon": 0.272, "loss": 0.1478}, {"episode": 290, "reward": 108.0, "avg100": 55.5, "epsilon": 0.269, "loss": 0.14502}, {"episode": 291, "reward": 120.0, "avg100": 56.3, "epsilon": 0.265, "loss": 0.16845}, {"episode": 292, "reward": 12.0, "avg100": 56.1, "epsilon": 0.264, "loss": 0.17005}, {"episode": 293, "reward": 17.0, "avg100": 56.1, "epsilon": 0.264, "loss": 0.11686}, {"episode": 294, "reward": 16.0, "avg100": 56.0, "epsilon": 0.263, "loss": 0.15201}, {"episode": 295, "reward": 91.0, "avg100": 56.7, "epsilon": 0.261, "loss": 0.16681}, {"episode": 296, "reward": 11.0, "avg100": 54.0, "epsilon": 0.26, "loss": 0.15943}, {"episode": 297, "reward": 108.0, "avg100": 54.3, "epsilon": 0.257, "loss": 0.14268}, {"episode": 298, "reward": 107.0, "avg100": 54.6, "epsilon": 0.254, "loss": 0.16026}, {"episode": 299, "reward": 18.0, "avg100": 54.3, "epsilon": 0.253, "loss": 0.15549}, {"episode": 300, "reward": 111.0, "avg100": 54.6, "epsilon": 0.25, "loss": 0.17506}, {"episode": 301, "reward": 129.0, "avg100": 54.1, "epsilon": 0.247, "loss": 0.16813}, {"episode": 302, "reward": 31.0, "avg100": 54.3, "epsilon": 0.246, "loss": 0.14326}, {"episode": 303, "reward": 156.0, "avg100": 55.7, "epsilon": 0.241, "loss": 0.15842}, {"episode": 304, "reward": 63.0, "avg100": 56.1, "epsilon": 0.24, "loss": 0.14734}, {"episode": 305, "reward": 194.0, "avg100": 57.7, "epsilon": 0.234, "loss": 0.15964}, {"episode": 306, "reward": 18.0, "avg100": 56.8, "epsilon": 0.234, "loss": 0.14557}, {"episode": 307, "reward": 110.0, "avg100": 57.7, "epsilon": 0.231, "loss": 0.14578}, {"episode": 308, "reward": 215.0, "avg100": 59.6, "epsilon": 0.225, "loss": 0.16021}, {"episode": 309, "reward": 11.0, "avg100": 59.6, "epsilon": 0.225, "loss": 0.31395}, {"episode": 310, "reward": 61.0, "avg100": 59.3, "epsilon": 0.224, "loss": 0.19121}, {"episode": 311, "reward": 242.0, "avg100": 60.8, "epsilon": 0.217, "loss": 0.16617}, {"episode": 312, "reward": 245.0, "avg100": 62.3, "epsilon": 0.212, "loss": 0.18348}, {"episode": 313, "reward": 199.0, "avg100": 63.6, "epsilon": 0.207, "loss": 0.1658}, {"episode": 314, "reward": 16.0, "avg100": 63.7, "epsilon": 0.206, "loss": 0.22668}, {"episode": 315, "reward": 221.0, "avg100": 64.7, "epsilon": 0.201, "loss": 0.192}, {"episode": 316, "reward": 125.0, "avg100": 65.0, "epsilon": 0.199, "loss": 0.19328}, {"episode": 317, "reward": 119.0, "avg100": 65.5, "epsilon": 0.196, "loss": 0.15995}, {"episode": 318, "reward": 125.0, "avg100": 66.6, "epsilon": 0.193, "loss": 0.19882}, {"episode": 319, "reward": 38.0, "avg100": 66.9, "epsilon": 0.192, "loss": 0.18544}, {"episode": 320, "reward": 117.0, "avg100": 67.8, "epsilon": 0.19, "loss": 0.19463}, {"episode": 321, "reward": 121.0, "avg100": 68.3, "epsilon": 0.187, "loss": 0.17845}, {"episode": 322, "reward": 177.0, "avg100": 69.8, "epsilon": 0.184, "loss": 0.17414}, {"episode": 323, "reward": 204.0, "avg100": 70.9, "epsilon": 0.18, "loss": 0.17079}, {"episode": 324, "reward": 232.0, "avg100": 72.7, "epsilon": 0.175, "loss": 0.18883}, {"episode": 325, "reward": 130.0, "avg100": 73.1, "epsilon": 0.172, "loss": 0.178}, {"episode": 326, "reward": 113.0, "avg100": 73.4, "epsilon": 0.17, "loss": 0.17535}, {"episode": 327, "reward": 254.0, "avg100": 75.8, "epsilon": 0.166, "loss": 0.20807}, {"episode": 328, "reward": 125.0, "avg100": 76.5, "epsilon": 0.163, "loss": 0.17533}, {"episode": 329, "reward": 338.0, "avg100": 79.8, "epsilon": 0.157, "loss": 0.18028}, {"episode": 330, "reward": 15.0, "avg100": 79.4, "epsilon": 0.157, "loss": 0.13518}, {"episode": 331, "reward": 182.0, "avg100": 81.1, "epsilon": 0.154, "loss": 0.19443}, {"episode": 332, "reward": 40.0, "avg100": 81.1, "epsilon": 0.153, "loss": 0.16583}, {"episode": 333, "reward": 300.0, "avg100": 83.9, "epsilon": 0.149, "loss": 0.20129}, {"episode": 334, "reward": 247.0, "avg100": 85.4, "epsilon": 0.145, "loss": 0.18732}, {"episode": 335, "reward": 20.0, "avg100": 85.4, "epsilon": 0.144, "loss": 0.31583}, {"episode": 336, "reward": 113.0, "avg100": 86.3, "epsilon": 0.143, "loss": 0.16471}, {"episode": 337, "reward": 63.0, "avg100": 85.5, "epsilon": 0.142, "loss": 0.1786}, {"episode": 338, "reward": 14.0, "avg100": 85.2, "epsilon": 0.141, "loss": 0.21897}, {"episode": 339, "reward": 179.0, "avg100": 86.9, "epsilon": 0.139, "loss": 0.19459}, {"episode": 340, "reward": 17.0, "avg100": 86.8, "epsilon": 0.138, "loss": 0.15068}, {"episode": 341, "reward": 15.0, "avg100": 86.8, "epsilon": 0.138, "loss": 0.17836}, {"episode": 342, "reward": 197.0, "avg100": 88.7, "epsilon": 0.135, "loss": 0.19218}, {"episode": 343, "reward": 18.0, "avg100": 88.1, "epsilon": 0.135, "loss": 0.16732}, {"episode": 344, "reward": 240.0, "avg100": 90.2, "epsilon": 0.132, "loss": 0.19478}, {"episode": 345, "reward": 240.0, "avg100": 92.4, "epsilon": 0.128, "loss": 0.21938}, {"episode": 346, "reward": 309.0, "avg100": 95.3, "epsilon": 0.124, "loss": 0.19061}, {"episode": 347, "reward": 266.0, "avg100": 97.6, "epsilon": 0.121, "loss": 0.2039}, {"episode": 348, "reward": 14.0, "avg100": 97.5, "epsilon": 0.121, "loss": 0.1149}, {"episode": 349, "reward": 13.0, "avg100": 96.5, "epsilon": 0.121, "loss": 0.18685}, {"episode": 350, "reward": 14.0, "avg100": 96.5, "epsilon": 0.12, "loss": 0.14907}, {"episode": 351, "reward": 276.0, "avg100": 98.1, "epsilon": 0.117, "loss": 0.19221}, {"episode": 352, "reward": 500.0, "avg100": 102.6, "epsilon": 0.111, "loss": 0.22048}, {"episode": 353, "reward": 500.0, "avg100": 107.5, "epsilon": 0.106, "loss": 0.21338}, {"episode": 354, "reward": 490.0, "avg100": 111.7, "epsilon": 0.1, "loss": 0.20939}, {"episode": 355, "reward": 251.0, "avg100": 114.0, "epsilon": 0.098, "loss": 0.20197}, {"episode": 356, "reward": 11.0, "avg100": 113.9, "epsilon": 0.098, "loss": 0.18758}, {"episode": 357, "reward": 295.0, "avg100": 116.6, "epsilon": 0.095, "loss": 0.2154}, {"episode": 358, "reward": 210.0, "avg100": 117.6, "epsilon": 0.093, "loss": 0.19859}, {"episode": 359, "reward": 41.0, "avg100": 117.0, "epsilon": 0.093, "loss": 0.21803}, {"episode": 360, "reward": 59.0, "avg100": 116.6, "epsilon": 0.092, "loss": 0.22024}, {"episode": 361, "reward": 250.0, "avg100": 118.1, "epsilon": 0.09, "loss": 0.20172}, {"episode": 362, "reward": 267.0, "avg100": 120.3, "epsilon": 0.088, "loss": 0.20538}, {"episode": 363, "reward": 282.0, "avg100": 123.0, "epsilon": 0.085, "loss": 0.2222}, {"episode": 364, "reward": 220.0, "avg100": 124.9, "epsilon": 0.084, "loss": 0.21948}, {"episode": 365, "reward": 50.0, "avg100": 125.2, "epsilon": 0.083, "loss": 0.20631}, {"episode": 366, "reward": 500.0, "avg100": 129.1, "epsilon": 0.079, "loss": 0.21105}, {"episode": 367, "reward": 155.0, "avg100": 130.2, "epsilon": 0.078, "loss": 0.20835}, {"episode": 368, "reward": 500.0, "avg100": 134.9, "epsilon": 0.075, "loss": 0.2134}, {"episode": 369, "reward": 342.0, "avg100": 138.2, "epsilon": 0.072, "loss": 0.21623}, {"episode": 370, "reward": 16.0, "avg100": 138.2, "epsilon": 0.072, "loss": 0.23434}, {"episode": 371, "reward": 182.0, "avg100": 139.0, "epsilon": 0.071, "loss": 0.21589}, {"episode": 372, "reward": 172.0, "avg100": 139.6, "epsilon": 0.07, "loss": 0.21673}, {"episode": 373, "reward": 46.0, "avg100": 139.8, "epsilon": 0.07, "loss": 0.2113}, {"episode": 374, "reward": 500.0, "avg100": 144.7, "epsilon": 0.067, "loss": 0.22949}, {"episode": 375, "reward": 500.0, "avg100": 148.5, "epsilon": 0.064, "loss": 0.22279}, {"episode": 376, "reward": 147.0, "avg100": 148.8, "epsilon": 0.063, "loss": 0.22608}, {"episode": 377, "reward": 500.0, "avg100": 152.8, "epsilon": 0.06, "loss": 0.21222}, {"episode": 378, "reward": 158.0, "avg100": 154.1, "epsilon": 0.06, "loss": 0.18928}, {"episode": 379, "reward": 500.0, "avg100": 158.9, "epsilon": 0.057, "loss": 0.21112}, {"episode": 380, "reward": 500.0, "avg100": 163.7, "epsilon": 0.055, "loss": 0.21729}, {"episode": 381, "reward": 249.0, "avg100": 165.0, "epsilon": 0.054, "loss": 0.21754}, {"episode": 382, "reward": 497.0, "avg100": 169.2, "epsilon": 0.052, "loss": 0.20309}, {"episode": 383, "reward": 95.0, "avg100": 168.8, "epsilon": 0.052, "loss": 0.1956}, {"episode": 384, "reward": 500.0, "avg100": 173.7, "epsilon": 0.05, "loss": 0.21697}, {"episode": 385, "reward": 500.0, "avg100": 178.2, "epsilon": 0.048, "loss": 0.20975}, {"episode": 386, "reward": 500.0, "avg100": 182.8, "epsilon": 0.046, "loss": 0.20138}, {"episode": 387, "reward": 500.0, "avg100": 187.6, "epsilon": 0.045, "loss": 0.20528}, {"episode": 388, "reward": 433.0, "avg100": 191.6, "epsilon": 0.043, "loss": 0.20103}, {"episode": 389, "reward": 367.0, "avg100": 194.2, "epsilon": 0.042, "loss": 0.21724}, {"episode": 390, "reward": 142.0, "avg100": 194.6, "epsilon": 0.042, "loss": 0.2046}, {"episode": 391, "reward": 500.0, "avg100": 198.4, "epsilon": 0.041, "loss": 0.19141}, {"episode": 392, "reward": 409.0, "avg100": 202.4, "epsilon": 0.039, "loss": 0.21257}, {"episode": 393, "reward": 352.0, "avg100": 205.7, "epsilon": 0.039, "loss": 0.23583}, {"episode": 394, "reward": 143.0, "avg100": 207.0, "epsilon": 0.038, "loss": 0.20158}, {"episode": 395, "reward": 356.0, "avg100": 209.6, "epsilon": 0.038, "loss": 0.22134}, {"episode": 396, "reward": 310.0, "avg100": 212.6, "epsilon": 0.037, "loss": 0.22089}, {"episode": 397, "reward": 205.0, "avg100": 213.6, "epsilon": 0.036, "loss": 0.19924}, {"episode": 398, "reward": 197.0, "avg100": 214.5, "epsilon": 0.036, "loss": 0.21524}, {"episode": 399, "reward": 271.0, "avg100": 217.0, "epsilon": 0.035, "loss": 0.21893}, {"episode": 400, "reward": 154.0, "avg100": 217.4, "epsilon": 0.035, "loss": 0.21612}], "trajectories": {"1": {"states": [[0.0152, -0.048], [0.0143, -0.0473], [0.0095, -0.0411], [0.0008, -0.0293], [-0.0118, -0.012], [-0.0282, 0.0111], [-0.0486, 0.0399], [-0.0729, 0.0746], [-0.1011, 0.1154], [-0.1332, 0.1625]], "reward": 10.0}, "50": {"states": [[0.0101, -0.015], [0.0092, -0.0153], [0.0123, -0.0216], [0.0193, -0.0338], [0.0301, -0.052], [0.0449, -0.0763], [0.0636, -0.1068], [0.0862, -0.1435], [0.1128, -0.1868]], "reward": 9.0}, "100": {"states": [[-0.0478, 0.0148], [-0.0486, 0.0157], [-0.0454, 0.0109], [-0.0384, 0.0003], [-0.0275, -0.0161], [-0.0127, -0.0383], [0.006, -0.0665], [0.0286, -0.1008], [0.0474, -0.1296], [0.0623, -0.1533], [0.0733, -0.172], [0.0804, -0.1858], [0.0837, -0.195], [0.0832, -0.1996], [0.0788, -0.1996], [0.0706, -0.1953], [0.0585, -0.1864], [0.0427, -0.173], [0.0229, -0.1551], [-0.0007, -0.1325], [-0.0281, -0.105], [-0.0594, -0.0726], [-0.0946, -0.0351], [-0.1336, 0.0079], [-0.1688, 0.0447], [-0.2, 0.0758], [-0.2274, 0.1013], [-0.2508, 0.1214], [-0.2704, 0.1364], [-0.2862, 0.1463], [-0.298, 0.1513], [-0.3061, 0.1514], [-0.3102, 0.1467], [-0.3106, 0.1372], [-0.307, 0.1228], [-0.2996, 0.1034], [-0.2883, 0.0791], [-0.2732, 0.0495], [-0.262, 0.0263], [-0.2469, -0.0024], [-0.2357, -0.0252], [-0.2206, -0.0537], [-0.2094, -0.0767], [-0.1943, -0.1057], [-0.183, -0.1295], [-0.1678, -0.1597], [-0.1566, -0.1849], [-0.1491, -0.2053]], "reward": 48.0}, "200": {"states": [[-0.0414, -0.0081], [-0.0406, -0.0089], [-0.0438, -0.0038], [-0.0508, 0.007], [-0.0618, 0.0237], [-0.0766, 0.0463], [-0.0876, 0.0631], [-0.0947, 0.0745], [-0.0979, 0.0803], [-0.0972, 0.0808], [-0.0926, 0.076], [-0.092, 0.0775], [-0.0953, 0.0854], [-0.0947, 0.0879], [-0.0902, 0.0851], [-0.0819, 0.077], [-0.0774, 0.0753], [-0.0769, 0.0799], [-0.0726, 0.0791], [-0.0721, 0.0847], [-0.0678, 0.085], [-0.0596, 0.0799], [-0.0553, 0.0812], [-0.0471, 0.0772], [-0.0429, 0.0796], [-0.0347, 0.0766], [-0.0305, 0.0799], [-0.0225, 0.0778], [-0.0183, 0.0821], [-0.0103, 0.0811], [-0.0062, 0.0864], [0.0018, 0.0864], [0.0137, 0.0811], [0.0216, 0.0822], [0.0334, 0.0779], [0.0413, 0.08], [0.0531, 0.0768], [0.0609, 0.0799], [0.0726, 0.0777], [0.0804, 0.0817], [0.0921, 0.0805], [0.0999, 0.0856], [0.1115, 0.0853], [0.127, 0.0798], [0.1386, 0.0806], [0.154, 0.0762], [0.1656, 0.078], [0.181, 0.0745], [0.2003, 0.0657], [0.2157, 0.0631], [0.2349, 0.0551], [0.2503, 0.0534], [0.2695, 0.0462], [0.2926, 0.0335], [0.3118, 0.0269], [0.3349, 0.0146], [0.354, 0.0084], [0.3693, 0.0081], [0.3885, 0.0021], [0.4037, 0.0019], [0.4229, -0.0041], [0.4382, -0.0042], [0.4495, 0.0014], [0.4648, 0.0012], [0.484, -0.0048], [0.4992, -0.005], [0.5106, 0.0007], [0.5259, 0.0004], [0.545, -0.0056], [0.5603, -0.0059], [0.5717, -0.0003], [0.5869, -0.0006], [0.5983, 0.005], [0.6136, 0.0046], [0.6328, -0.0015], [0.648, -0.0017], [0.6594, 0.0039], [0.6747, 0.0036], [0.686, 0.0092], [0.7013, 0.009], [0.7127, 0.0147], [0.7279, 0.0146], [0.7393, 0.0204], [0.7545, 0.0205], [0.7737, 0.0148], [0.7967, 0.0035], [0.8159, -0.002], [0.8311, -0.0015], [0.8424, 0.0048], [0.8499, 0.0169], [0.8534, 0.0349], [0.8608, 0.0472], [0.8722, 0.0539], [0.8874, 0.055], [0.9065, 0.0506], [0.9294, 0.0407], [0.9485, 0.0369], [0.9637, 0.0393], [0.9827, 0.036], [0.9978, 0.0389], [1.0168, 0.0361], [1.032, 0.0394], [1.0431, 0.0488], [1.0582, 0.0526], [1.0772, 0.0508], [1.0923, 0.0553], [1.1034, 0.0659], [1.1184, 0.071], [1.1373, 0.0706], [1.1523, 0.0766], [1.1634, 0.0889], [1.1783, 0.0957], [1.1894, 0.109], [1.2043, 0.1171], [1.2152, 0.1316], [1.2301, 0.1411], [1.241, 0.1572], [1.2557, 0.1684], [1.2665, 0.1864], [1.2812, 0.1996]], "reward": 120.0}, "300": {"states": [[0.0099, -0.0362], [0.0099, -0.037], [0.0137, -0.0439], [0.0215, -0.0568], [0.0332, -0.0758], [0.0488, -0.1011], [0.0605, -0.121], [0.0683, -0.1357], [0.0723, -0.1453], [0.0802, -0.1616], [0.0843, -0.1731], [0.0845, -0.1797], [0.0809, -0.1817], [0.0734, -0.1791], [0.0698, -0.1834], [0.0625, -0.183], [0.0512, -0.1781], [0.044, -0.18], [0.0328, -0.1773], [0.0257, -0.1815], [0.0146, -0.181], [-0.0002, -0.1759], [-0.0189, -0.1663], [-0.0337, -0.1634], [-0.0523, -0.1559], [-0.067, -0.1551], [-0.0855, -0.1495], [-0.1001, -0.1507], [-0.1185, -0.1471], [-0.1408, -0.1386], [-0.1592, -0.1368], [-0.1814, -0.1301], [-0.1997, -0.1301], [-0.2218, -0.125], [-0.2478, -0.115], [-0.2699, -0.1116], [-0.2958, -0.1031], [-0.3178, -0.1011], [-0.3437, -0.0939], [-0.3656, -0.0932], [-0.3915, -0.0873], [-0.4211, -0.0761], [-0.4547, -0.0597], [-0.4844, -0.0495], [-0.5179, -0.0339], [-0.5475, -0.0244], [-0.5732, -0.0211], [-0.6028, -0.012], [-0.6363, 0.0028], [-0.6659, 0.0117], [-0.6994, 0.0265], [-0.729, 0.0354], [-0.7625, 0.0504], [-0.7921, 0.0598], [-0.8256, 0.0753], [-0.8553, 0.0854], [-0.8888, 0.1017], [-0.9185, 0.1128], [-0.9443, 0.1187], [-0.9663, 0.1195], [-0.9921, 0.1269], [-1.0142, 0.1292], [-1.0401, 0.138], [-1.0622, 0.142], [-1.0804, 0.1409], [-1.0948, 0.135], [-1.1131, 0.1358], [-1.1276, 0.1316], [-1.1382, 0.1225], [-1.1527, 0.12], [-1.1633, 0.1124], [-1.1779, 0.1114], [-1.1887, 0.1054], [-1.2033, 0.1058], [-1.2141, 0.1011], [-1.221, 0.0912], [-1.2319, 0.0878], [-1.2389, 0.0791], [-1.2498, 0.0768], [-1.2568, 0.0692], [-1.2677, 0.0679], [-1.2748, 0.0612], [-1.2858, 0.0607], [-1.2929, 0.0548], [-1.3039, 0.0552], [-1.311, 0.05], [-1.322, 0.051], [-1.3292, 0.0465], [-1.3403, 0.0482], [-1.3475, 0.0443], [-1.3586, 0.0465], [-1.3658, 0.0432], [-1.3691, 0.0343], [-1.3764, 0.0316], [-1.3875, 0.0349], [-1.3948, 0.0326], [-1.3981, 0.0246], [-1.4054, 0.0227], [-1.4088, 0.0151], [-1.4161, 0.0135], [-1.4195, 0.0061], [-1.4268, 0.0047], [-1.438, 0.0092], [-1.4453, 0.0078], [-1.4487, 0.0007], [-1.456, -0.0006], [-1.4594, -0.0077], [-1.4667, -0.0089], [-1.4701, -0.0161], [-1.4774, -0.0175], [-1.4886, -0.0131], [-1.4959, -0.0146], [-1.4993, -0.0221], [-1.5066, -0.0239], [-1.5178, -0.0199], [-1.525, -0.0219], [-1.5362, -0.0182], [-1.5435, -0.0205], [-1.5468, -0.0288], [-1.5541, -0.0313], [-1.5652, -0.0282], [-1.5724, -0.0311], [-1.5836, -0.0284], [-1.5908, -0.0317], [-1.6019, -0.0293], [-1.6091, -0.033], [-1.6202, -0.031], [-1.6274, -0.035], [-1.6384, -0.0334], [-1.6456, -0.0379], [-1.6566, -0.0368], [-1.6638, -0.0417], [-1.6748, -0.041], [-1.6819, -0.0464], [-1.693, -0.0463], [-1.7, -0.0522], [-1.711, -0.0527], [-1.7181, -0.0592], [-1.729, -0.0603], [-1.7439, -0.0559], [-1.7548, -0.0578], [-1.7618, -0.0658], [-1.7727, -0.0683], [-1.7875, -0.0655], [-1.7983, -0.0689], [-1.813, -0.0668], [-1.8316, -0.0594], [-1.8463, -0.0582], [-1.8571, -0.0633], [-1.864, -0.0745], [-1.8747, -0.0803], [-1.8893, -0.0808], [-1.9078, -0.0759], [-1.9224, -0.0773], [-1.9408, -0.0734], [-1.9554, -0.0758], [-1.9738, -0.0729], [-1.9883, -0.0762], [-1.9988, -0.0859], [-2.0133, -0.0902], [-2.0316, -0.0892], [-2.046, -0.0946], [-2.0643, -0.0948], [-2.0864, -0.0897], [-2.1046, -0.091], [-2.1189, -0.0987], [-2.1371, -0.1012], [-2.1591, -0.0985], [-2.1772, -0.1022], [-2.1992, -0.1007], [-2.2172, -0.1057], [-2.2392, -0.1055], [-2.2572, -0.1118], [-2.279, -0.1129], [-2.3048, -0.109], [-2.3266, -0.1115], [-2.3522, -0.1089], [-2.374, -0.1128], [-2.3996, -0.1116]], "reward": 179.0}, "400": {"states": [[-0.0071, -0.0401], [-0.0065, -0.0406], [-0.0098, -0.0354], [-0.017, -0.0246], [-0.0281, -0.0082], [-0.0431, 0.0138], [-0.062, 0.0417], [-0.0769, 0.0638], [-0.0958, 0.0921], [-0.1109, 0.1149], [-0.122, 0.1324], [-0.1293, 0.1449], [-0.1327, 0.1523], [-0.1322, 0.155], [-0.1279, 0.1527], [-0.1198, 0.1457], [-0.1078, 0.1339], [-0.0919, 0.1172], [-0.0722, 0.0956], [-0.0486, 0.0688], [-0.0211, 0.0369], [0.0103, -0.0005], [0.0377, -0.0318], [0.0612, -0.0572], [0.0809, -0.077], [0.0966, -0.0913], [0.1085, -0.1002], [0.1165, -0.1039], [0.1207, -0.1024], [0.1209, -0.0958], [0.1173, -0.0839], [0.1099, -0.0669], [0.0985, -0.0445], [0.0911, -0.0284], [0.0875, -0.0185], [0.0801, -0.0028], [0.0766, 0.0068], [0.077, 0.0106], [0.0735, 0.0203], [0.0739, 0.0243], [0.0782, 0.0224], [0.0864, 0.0149], [0.0984, 0.0017], [0.1066, -0.0056], [0.1109, -0.007], [0.1112, -0.0026], [0.1077, 0.0076], [0.1081, 0.012], [0.1045, 0.0222], [0.1049, 0.0267], [0.1092, 0.0255], [0.1173, 0.0186], [0.1294, 0.0059], [0.1375, -0.0007], [0.1417, -0.0015], [0.1421, 0.0036], [0.1385, 0.0146], [0.1388, 0.0197], [0.1431, 0.019], [0.1512, 0.0127], [0.1632, 0.0005], [0.1714, -0.0056], [0.1756, -0.006], [0.1759, -0.0005], [0.1801, -0.0009], [0.1804, 0.0046], [0.1847, 0.0042], [0.1928, -0.002], [0.197, -0.0024], [0.1973, 0.0031], [0.2015, 0.0027], [0.2097, -0.0035], [0.2139, -0.0038], [0.2142, 0.0017], [0.2184, 0.0013], [0.2265, -0.0049], [0.2308, -0.0053], [0.2311, 0.0002], [0.2353, -0.0003], [0.2434, -0.0066], [0.2476, -0.007], [0.248, -0.0016], [0.2522, -0.0021], [0.2603, -0.0085], [0.2646, -0.009], [0.2649, -0.0038], [0.2691, -0.0044], [0.2773, -0.011], [0.2815, -0.0117], [0.2818, -0.0066], [0.2861, -0.0074], [0.2864, -0.0025], [0.2907, -0.0034], [0.291, 0.0015], [0.2952, 0.0006], [0.3034, -0.0063], [0.3076, -0.0072], [0.308, -0.0024], [0.3122, -0.0034], [0.3126, 0.0014], [0.3168, 0.0003], [0.3172, 0.0051], [0.3214, 0.004], [0.3218, 0.0089], [0.326, 0.0078], [0.3342, 0.001], [0.3384, 0.0001], [0.3388, 0.0051], [0.343, 0.0042], [0.3434, 0.0092], [0.3476, 0.0083], [0.3479, 0.0134], [0.3522, 0.0127], [0.3603, 0.0062], [0.3645, 0.0056], [0.3649, 0.011], [0.3691, 0.0105], [0.3694, 0.0159], [0.3736, 0.0155], [0.3817, 0.0094], [0.386, 0.0093], [0.3863, 0.015], [0.3905, 0.015], [0.3986, 0.0092], [0.4028, 0.0094], [0.4031, 0.0154], [0.4072, 0.0157], [0.4153, 0.0102], [0.4195, 0.0107], [0.4198, 0.0171], [0.424, 0.0177], [0.432, 0.0125], [0.444, 0.0016], [0.4521, -0.0033], [0.4562, -0.0024], [0.4565, 0.0043], [0.4607, 0.0052], [0.4609, 0.0119], [0.4651, 0.0129], [0.4653, 0.0197], [0.4695, 0.0208], [0.4775, 0.0162], [0.4895, 0.0058], [0.4975, 0.0014], [0.5017, 0.0029], [0.5019, 0.0103], [0.506, 0.0118], [0.5063, 0.0192], [0.5104, 0.0209], [0.5184, 0.0168], [0.5303, 0.007], [0.5384, 0.0031], [0.5425, 0.0052], [0.5427, 0.0131], [0.5468, 0.0152], [0.5548, 0.0116], [0.5589, 0.0139], [0.5669, 0.0104], [0.571, 0.0128], [0.579, 0.0095], [0.5831, 0.0121], [0.591, 0.0089], [0.5951, 0.0116], [0.6031, 0.0085], [0.6072, 0.0114], [0.6152, 0.0084], [0.6192, 0.0114], [0.6272, 0.0086], [0.6313, 0.0117], [0.6392, 0.009], [0.6433, 0.0123], [0.6512, 0.0097], [0.6553, 0.0131], [0.6632, 0.0106], [0.6673, 0.0142], [0.6752, 0.0119], [0.6793, 0.0156], [0.6872, 0.0134], [0.6912, 0.0173], [0.6991, 0.0154], [0.7032, 0.0194], [0.7111, 0.0177], [0.7151, 0.0219], [0.723, 0.0204], [0.727, 0.025], [0.7349, 0.0237], [0.7467, 0.0168], [0.7546, 0.0159], [0.7585, 0.021], [0.7664, 0.0202], [0.7704, 0.0255], [0.7782, 0.0251], [0.79, 0.0189], [0.7978, 0.0188], [0.8018, 0.0247], [0.8096, 0.0248], [0.8214, 0.0192], [0.8292, 0.0196], [0.8331, 0.026], [0.8409, 0.0267], [0.8526, 0.0217], [0.8604, 0.0227], [0.8721, 0.018], [0.8799, 0.0192], [0.8916, 0.0148], [0.8993, 0.0163], [0.911, 0.012], [0.9188, 0.0138], [0.9304, 0.0097], [0.9382, 0.0116], [0.9498, 0.0076], [0.9576, 0.0097], [0.9692, 0.0059], [0.977, 0.008], [0.9886, 0.0043], [0.9964, 0.0065], [1.008, 0.0029], [1.0157, 0.0051], [1.0274, 0.0016], [1.0351, 0.0039], [1.0389, 0.0121], [1.0467, 0.0144], [1.0583, 0.011], [1.066, 0.0135], [1.0699, 0.022], [1.0776, 0.0247], [1.0892, 0.0216], [1.0969, 0.0246], [1.1085, 0.0219], [1.1162, 0.0251], [1.1278, 0.0227], [1.1355, 0.0262], [1.147, 0.0241], [1.1547, 0.0279], [1.1663, 0.0261], [1.1739, 0.0303], [1.1855, 0.0288], [1.1931, 0.0334], [1.2046, 0.0322], [1.2122, 0.0372], [1.2237, 0.0365], [1.2313, 0.0418], [1.2428, 0.0416], [1.2504, 0.0475], [1.2619, 0.0478], [1.2694, 0.0542], [1.2809, 0.0551], [1.2884, 0.0621], [1.2998, 0.0637], [1.3073, 0.0715], [1.3186, 0.0739], [1.3261, 0.0826], [1.3374, 0.0858], [1.3526, 0.0838], [1.3639, 0.0882], [1.3791, 0.0872], [1.3903, 0.0926], [1.4054, 0.0928], [1.4166, 0.0993], [1.4316, 0.1006], [1.4428, 0.1084], [1.4578, 0.111], [1.4766, 0.1084], [1.4916, 0.1124], [1.5104, 0.1112], [1.5253, 0.1165], [1.544, 0.1167], [1.5588, 0.1235], [1.5775, 0.1252], [1.5922, 0.1335], [1.6108, 0.1367], [1.6333, 0.135], [1.6518, 0.14], [1.6742, 0.14], [1.6927, 0.1466], [1.715, 0.1484], [1.7333, 0.1569], [1.7556, 0.1605], [1.7817, 0.1593], [1.8038, 0.1649], [1.8298, 0.1657], [1.8518, 0.1734], [1.8777, 0.1763], [1.9075, 0.1745], [1.9333, 0.1796], [1.9629, 0.18], [1.9886, 0.1873], [2.0182, 0.19], [2.0437, 0.1996], [2.0732, 0.2046], [2.1065, 0.2052], [2.1436, 0.2013], [2.1767, 0.2045], [2.2137, 0.2031], [2.2468, 0.2088]], "reward": 295.0}}, "phase_end": 1784865682.3088994, "solved_at": null, "final_avg100": 217.4}, "gpu_dl": [{"t": 0, "util": 0, "mem": 433, "power": 114.22, "temp": 34}, {"t": 1, "util": 0, "mem": 433, "power": 114.39, "temp": 34}, {"t": 2, "util": 0, "mem": 450, "power": 114.22, "temp": 34}, {"t": 3, "util": 26, "mem": 2102, "power": 136.1, "temp": 36}, {"t": 4, "util": 98, "mem": 2552, "power": 283.51, "temp": 38}, {"t": 5, "util": 98, "mem": 2552, "power": 303.76, "temp": 39}, {"t": 6, "util": 47, "mem": 2618, "power": 245.9, "temp": 39}, {"t": 7, "util": 98, "mem": 2618, "power": 306.18, "temp": 40}, {"t": 8, "util": 99, "mem": 2618, "power": 305.14, "temp": 40}, {"t": 9, "util": 98, "mem": 3130, "power": 268.95, "temp": 40}, {"t": 11, "util": 98, "mem": 3130, "power": 305.1, "temp": 41}, {"t": 12, "util": 55, "mem": 3130, "power": 272.06, "temp": 40}, {"t": 13, "util": 98, "mem": 3130, "power": 308.36, "temp": 41}, {"t": 14, "util": 99, "mem": 3130, "power": 308.34, "temp": 42}, {"t": 15, "util": 98, "mem": 3130, "power": 268.58, "temp": 42}, {"t": 16, "util": 98, "mem": 3130, "power": 310.19, "temp": 42}, {"t": 17, "util": 0, "mem": 3130, "power": 242.33, "temp": 39}], "gpu_rl": [{"t": 0, "util": 4, "mem": 433, "power": 155.4, "temp": 38}, {"t": 1, "util": 0, "mem": 450, "power": 115.6, "temp": 37}, {"t": 2, "util": 14, "mem": 1040, "power": 115.51, "temp": 37}, {"t": 3, "util": 18, "mem": 1040, "power": 115.84, "temp": 37}, {"t": 4, "util": 19, "mem": 1040, "power": 115.81, "temp": 37}, {"t": 5, "util": 18, "mem": 1040, "power": 115.6, "temp": 37}, {"t": 6, "util": 18, "mem": 1040, "power": 115.64, "temp": 36}, {"t": 7, "util": 18, "mem": 1040, "power": 115.74, "temp": 36}, {"t": 8, "util": 18, "mem": 1040, "power": 115.66, "temp": 36}, {"t": 9, "util": 18, "mem": 1040, "power": 115.69, "temp": 36}, {"t": 10, "util": 18, "mem": 1040, "power": 115.54, "temp": 36}, {"t": 12, "util": 18, "mem": 1040, "power": 115.71, "temp": 36}, {"t": 13, "util": 18, "mem": 1040, "power": 115.73, "temp": 36}, {"t": 14, "util": 18, "mem": 1040, "power": 115.51, "temp": 36}, {"t": 15, "util": 18, "mem": 1040, "power": 115.52, "temp": 36}, {"t": 16, "util": 18, "mem": 1040, "power": 115.44, "temp": 36}, {"t": 17, "util": 18, "mem": 1040, "power": 115.4, "temp": 36}, {"t": 18, "util": 18, "mem": 1040, "power": 115.33, "temp": 36}, {"t": 19, "util": 18, "mem": 1040, "power": 115.31, "temp": 36}, {"t": 20, "util": 18, "mem": 1040, "power": 115.48, "temp": 36}, {"t": 21, "util": 18, "mem": 1040, "power": 115.58, "temp": 36}, {"t": 22, "util": 18, "mem": 1040, "power": 115.37, "temp": 36}, {"t": 23, "util": 18, "mem": 1040, "power": 115.3, "temp": 36}, {"t": 24, "util": 17, "mem": 1040, "power": 115.3, "temp": 36}, {"t": 25, "util": 17, "mem": 1040, "power": 115.24, "temp": 36}, {"t": 26, "util": 17, "mem": 1040, "power": 115.17, "temp": 36}, {"t": 27, "util": 17, "mem": 1040, "power": 115.32, "temp": 36}, {"t": 28, "util": 17, "mem": 1040, "power": 115.34, "temp": 36}, {"t": 29, "util": 17, "mem": 1040, "power": 115.26, "temp": 36}, {"t": 30, "util": 17, "mem": 1040, "power": 115.31, "temp": 36}, {"t": 31, "util": 17, "mem": 1040, "power": 115.17, "temp": 36}, {"t": 32, "util": 17, "mem": 1040, "power": 115.31, "temp": 35}, {"t": 33, "util": 17, "mem": 1040, "power": 115.09, "temp": 35}, {"t": 34, "util": 17, "mem": 1040, "power": 115.16, "temp": 35}, {"t": 35, "util": 17, "mem": 1040, "power": 114.98, "temp": 35}, {"t": 36, "util": 17, "mem": 1040, "power": 115.37, "temp": 35}, {"t": 37, "util": 17, "mem": 1040, "power": 115.46, "temp": 35}, {"t": 38, "util": 17, "mem": 1040, "power": 115.54, "temp": 35}, {"t": 39, "util": 16, "mem": 1040, "power": 115.53, "temp": 35}, {"t": 40, "util": 17, "mem": 1040, "power": 115.65, "temp": 35}, {"t": 42, "util": 17, "mem": 1040, "power": 115.54, "temp": 35}, {"t": 43, "util": 17, "mem": 1040, "power": 115.54, "temp": 35}, {"t": 44, "util": 17, "mem": 1040, "power": 115.37, "temp": 35}, {"t": 45, "util": 17, "mem": 1040, "power": 115.49, "temp": 35}, {"t": 46, "util": 17, "mem": 1040, "power": 115.45, "temp": 35}, {"t": 47, "util": 17, "mem": 1040, "power": 115.5, "temp": 35}, {"t": 48, "util": 16, "mem": 1040, "power": 115.51, "temp": 35}], "node": {"host": "node09.tx.bj.stonewise.cn", "gpus": "8 × NVIDIA H20 (96 GB)", "driver": "535.161.07", "image": "node09-h20-validation:20260717 (NGC PyTorch 24.08)", "date": "2026-07-24"}};
+
+/* ---------- theme ---------- */
+(function () {
+  const btn = document.getElementById("themeBtn");
+  const states = [["", "主题：跟随系统"], ["light", "主题：浅色"], ["dark", "主题：深色"]];
+  let i = 0;
+  btn.addEventListener("click", () => {
+    i = (i + 1) % states.length;
+    const [v, label] = states[i];
+    if (v) document.documentElement.setAttribute("data-theme", v);
+    else document.documentElement.removeAttribute("data-theme");
+    btn.textContent = label;
+  });
+})();
+
+/* ---------- helpers ---------- */
+const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("en-US");
+const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { maximumFractionDigits: d });
+function el(tag, attrs, parent) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceTicks(min, max, n = 4) {
+  const span = max - min || 1;
+  const step0 = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  let step = mag;
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * mag >= step0) { step = m * mag; break; }
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+
+/* ---------- line chart ----------
+   opts: {el, title, note, series:[{name, color, points:[[x,y]], marker, deemph, dash}],
+          xFmt, yFmt, xLabel, yLabel, yMin, annotY:{y,label}, endLabel} */
+function lineChart(o) {
+  const fig = document.getElementById(o.el);
+  const W = 520, H = o.h || 230, M = { t: 14, r: 14, b: 34, l: 52 };
+  const cap = document.createElement("figcaption");
+  const twrap = document.createElement("div");
+  const title = document.createElement("span"); title.className = "fig-title"; title.textContent = o.title;
+  twrap.appendChild(title);
+  if (o.note) { const n = document.createElement("span"); n.className = "fig-note"; n.textContent = " · " + o.note; twrap.appendChild(n); }
+  cap.appendChild(twrap);
+  const act = document.createElement("div"); act.className = "fig-actions";
+  const tb = document.createElement("button"); tb.className = "tbl-btn"; tb.type = "button"; tb.textContent = "表格"; tb.setAttribute("aria-pressed", "false");
+  act.appendChild(tb); cap.appendChild(act); fig.appendChild(cap);
+
+  const vis = o.series.filter(s => s.points.length);
+  if (vis.length >= 2) {
+    const lg = document.createElement("div"); lg.className = "legend";
+    for (const s of vis) {
+      const k = document.createElement("span"); k.className = "key";
+      const i = document.createElement("i"); i.style.borderTopColor = s.color;
+      if (s.dash) i.style.borderTopStyle = "dashed";
+      k.appendChild(i); k.appendChild(document.createTextNode(s.name)); lg.appendChild(k);
+    }
+    fig.appendChild(lg);
+  }
+
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null);
+  box.appendChild(svg);
+
+  const xs = vis.flatMap(s => s.points.map(p => p[0]));
+  const ys = vis.flatMap(s => s.points.map(p => p[1]));
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  let ymin = o.yMin !== undefined ? o.yMin : Math.min(...ys, o.annotY ? o.annotY.y : Infinity);
+  let ymax = Math.max(...ys, o.annotY ? o.annotY.y : -Infinity);
+  if (ymin === ymax) { ymin -= 1; ymax += 1; }
+  const yticks = niceTicks(ymin, ymax, 4);
+  ymin = Math.min(ymin, yticks[0]); ymax = Math.max(ymax, yticks[yticks.length - 1]);
+  const X = x => M.l + (x - xmin) / (xmax - xmin || 1) * (W - M.l - M.r);
+  const Y = y => H - M.b - (y - ymin) / (ymax - ymin || 1) * (H - M.t - M.b);
+
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  const xticks = niceTicks(xmin, xmax, 5).filter(t => t >= xmin - 1e-9 && t <= xmax + 1e-9);
+  for (const t of xticks) {
+    const tx = el("text", { x: X(t), y: H - M.b + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.xFmt ? o.xFmt(t) : fmt(t);
+  }
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+
+  if (o.annotY) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(o.annotY.y), y2: Y(o.annotY.y), stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    const tx = el("text", { x: W - M.r, y: Y(o.annotY.y) - 5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    tx.textContent = o.annotY.label;
+  }
+
+  for (const s of vis) {
+    if (s.area) {
+      const d = "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L") +
+        `L${X(s.points[s.points.length - 1][0])},${Y(Math.max(ymin, 0))}L${X(s.points[0][0])},${Y(Math.max(ymin, 0))}Z`;
+      el("path", { d, fill: s.color, opacity: 0.1, stroke: "none" }, svg);
+    }
+    el("path", {
+      d: "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L"),
+      fill: "none", stroke: s.color, "stroke-width": s.deemph ? 1.5 : 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round",
+      ...(s.dash ? { "stroke-dasharray": "5 4" } : {}), opacity: s.deemph ? 0.55 : 1,
+    }, svg);
+    if (s.marker) for (const p of s.points)
+      el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+  }
+  if (o.endLabel) {
+    const s = vis[o.endLabel.series || 0];
+    const p = s.points[s.points.length - 1];
+    const tx = el("text", { x: X(p[0]) - 6, y: Y(p[1]) - 9, "text-anchor": "end", "font-size": 11, "font-weight": 600, fill: "var(--text-1)" }, svg);
+    tx.textContent = o.endLabel.fmt ? o.endLabel.fmt(p[1]) : fmt(p[1]);
+  }
+
+  /* crosshair + tooltip */
+  const cross = el("line", { y1: M.t, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const dots = vis.map(s => el("circle", { r: 4.5, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" }, svg));
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const xsSorted = [...new Set(vis.flatMap(s => s.points.map(p => p[0])))].sort((a, b) => a - b);
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) / r.width * W;
+    if (mx < M.l || mx > W - M.r) { hide(); return; }
+    const xv = xmin + (mx - M.l) / (W - M.l - M.r) * (xmax - xmin);
+    let best = xsSorted[0];
+    for (const x of xsSorted) if (Math.abs(x - xv) < Math.abs(best - xv)) best = x;
+    cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best));
+    cross.setAttribute("visibility", "visible");
+    tip.textContent = "";
+    const tx = document.createElement("div"); tx.className = "tx";
+    tx.textContent = (o.xLabel || "x") + " " + (o.xFmt ? o.xFmt(best) : fmt(best));
+    tip.appendChild(tx);
+    vis.forEach((s, i) => {
+      const p = s.points.reduce((a, b) => Math.abs(b[0] - best) < Math.abs(a[0] - best) ? b : a);
+      if (Math.abs(p[0] - best) > (xmax - xmin) / Math.max(8, s.points.length) * 2) { dots[i].setAttribute("visibility", "hidden"); return; }
+      dots[i].setAttribute("cx", X(p[0])); dots[i].setAttribute("cy", Y(p[1]));
+      dots[i].setAttribute("visibility", "visible");
+      const row = document.createElement("div"); row.className = "row";
+      const key = document.createElement("i"); key.style.borderTopColor = s.color; row.appendChild(key);
+      const b = document.createElement("b"); b.textContent = o.yFmt ? o.yFmt(p[1]) : fmt(p[1]); row.appendChild(b);
+      const nm = document.createElement("span"); nm.textContent = s.name; row.appendChild(nm);
+      tip.appendChild(row);
+    });
+    tip.style.display = "block";
+    const bx = box.getBoundingClientRect();
+    let left = (X(best) / W) * bx.width + 14;
+    if (left + tip.offsetWidth > bx.width - 4) left = (X(best) / W) * bx.width - tip.offsetWidth - 14;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(0, (ev.clientY - bx.top) - tip.offsetHeight - 12) + "px";
+  });
+  function hide() { cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); tip.style.display = "none"; }
+  svg.addEventListener("pointerleave", hide);
+
+  /* table view */
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  const th0 = document.createElement("th"); th0.textContent = o.xLabel || "x"; hr.appendChild(th0);
+  for (const s of vis) { const th = document.createElement("th"); th.textContent = s.name; hr.appendChild(th); }
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const step = Math.ceil(xsSorted.length / 40);
+  xsSorted.filter((_, i) => i % step === 0 || i === xsSorted.length - 1).forEach(x => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = o.xFmt ? o.xFmt(x) : fmt(x); tr.appendChild(td0);
+    for (const s of vis) {
+      const p = s.points.find(p => p[0] === x) || s.points.reduce((a, b) => Math.abs(b[0] - x) < Math.abs(a[0] - x) ? b : a);
+      const td = document.createElement("td"); td.textContent = o.yFmt ? o.yFmt(p[1]) : fmt(p[1]); tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+  tb.addEventListener("click", () => {
+    const on = fig.classList.toggle("show-table");
+    tb.setAttribute("aria-pressed", String(on));
+  });
+}
+
+/* ---------- bar chart (few bars, direct-labeled) ---------- */
+function barChart(o) {
+  const fig = document.getElementById(o.el);
+  const W = 520, H = o.h || 230, M = { t: 22, r: 14, b: 34, l: 52 };
+  const cap = document.createElement("figcaption");
+  const tw = document.createElement("div");
+  const title = document.createElement("span"); title.className = "fig-title"; title.textContent = o.title; tw.appendChild(title);
+  if (o.note) { const n = document.createElement("span"); n.className = "fig-note"; n.textContent = " · " + o.note; tw.appendChild(n); }
+  cap.appendChild(tw);
+  const act = document.createElement("div"); act.className = "fig-actions";
+  const tb = document.createElement("button"); tb.className = "tbl-btn"; tb.type = "button"; tb.textContent = "表格"; tb.setAttribute("aria-pressed", "false");
+  act.appendChild(tb); cap.appendChild(act); fig.appendChild(cap);
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null); box.appendChild(svg);
+
+  const ymax = Math.max(...o.bars.map(b => b.v));
+  const yticks = niceTicks(0, ymax, 4);
+  const top = yticks[yticks.length - 1];
+  const Y = v => H - M.b - v / top * (H - M.t - M.b);
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+
+  const n = o.bars.length;
+  const band = (W - M.l - M.r) / n;
+  const bw = Math.min(24, band * 0.5);
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  o.bars.forEach((b, i) => {
+    const cx = M.l + band * (i + 0.5);
+    const y = Y(b.v), h = H - M.b - y;
+    const r = Math.min(4, bw / 2, h);
+    el("path", {
+      d: `M${cx - bw / 2},${H - M.b} L${cx - bw / 2},${y + r} Q${cx - bw / 2},${y} ${cx - bw / 2 + r},${y} L${cx + bw / 2 - r},${y} Q${cx + bw / 2},${y} ${cx + bw / 2},${y + r} L${cx + bw / 2},${H - M.b} Z`,
+      fill: o.color, class: "barmark",
+    }, svg);
+    const vl = el("text", { x: cx, y: y - 6, "text-anchor": "middle", "font-size": 11, "font-weight": 600, fill: "var(--text-1)" }, svg);
+    vl.textContent = o.yFmt ? o.yFmt(b.v) : fmt(b.v);
+    const xl = el("text", { x: cx, y: H - M.b + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    xl.textContent = b.label;
+    const hit = el("rect", { x: cx - band / 2, y: M.t, width: band, height: H - M.t - M.b, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      tip.textContent = "";
+      const tx = document.createElement("div"); tx.className = "tx"; tx.textContent = b.label; tip.appendChild(tx);
+      const row = document.createElement("div"); row.className = "row";
+      const key = document.createElement("i"); key.style.borderTopColor = o.color; row.appendChild(key);
+      const bb = document.createElement("b"); bb.textContent = (o.yFmt ? o.yFmt(b.v) : fmt(b.v)); row.appendChild(bb);
+      const nm = document.createElement("span"); nm.textContent = o.seriesName || ""; row.appendChild(nm);
+      tip.appendChild(row);
+      tip.style.display = "block";
+      const bx = box.getBoundingClientRect();
+      let left = (cx / W) * bx.width + 12;
+      if (left + tip.offsetWidth > bx.width - 4) left = (cx / W) * bx.width - tip.offsetWidth - 12;
+      tip.style.left = left + "px";
+      tip.style.top = Math.max(0, (Y(b.v) / H) * bx.height - tip.offsetHeight - 8) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  });
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr2 = document.createElement("tr");
+  [o.xLabel || "类别", o.seriesName || "值"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr2.appendChild(th); });
+  thead.appendChild(hr2); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  o.bars.forEach(b => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = b.label; tr.appendChild(td0);
+    const td1 = document.createElement("td"); td1.textContent = o.yFmt ? o.yFmt(b.v) : fmt(b.v); tr.appendChild(td1);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+  tb.addEventListener("click", () => { const on = fig.classList.toggle("show-table"); tb.setAttribute("aria-pressed", String(on)); });
+}
+
+/* ---------- build page ---------- */
+const { dl, rl, gpu_dl, gpu_rl, node } = DATA;
+
+/* chips */
+{
+  const chips = document.getElementById("chips");
+  [node.date + " · " + node.host, node.gpus, "Driver " + node.driver, node.image,
+   "PyTorch " + dl.torch.split("+")[0] + " · CUDA " + dl.cuda].forEach(t => {
+    const c = document.createElement("span"); c.className = "chip"; c.textContent = t; chips.appendChild(c);
+  });
+}
+
+/* tiles */
+{
+  const dlSecs = dl.epoch_stats.reduce((a, e) => a + e.epoch_seconds, 0);
+  const peakUtil = Math.max(...gpu_dl.map(g => g.util));
+  const peakPw = Math.max(...gpu_dl.map(g => g.power));
+  const tiles = [
+    { lbl: "DL 测试精度（5 epoch）", val: (dl.final_acc * 100).toFixed(1), unit: "%", delta: "ResNet-18 · CIFAR-10 · " + fmt1(dlSecs) + "s", up: true },
+    { lbl: "训练吞吐", val: fmt(dl.epoch_stats[4].images_per_sec / 1000, 1) + "K", unit: "img/s", delta: "batch 512 · bf16 AMP", up: false },
+    { lbl: "RL 近100局平均回报", val: fmt1(rl.final_avg100), unit: "", delta: "起步 ~22 → 400 局后 " + fmt1(rl.final_avg100) + "（满分 500）", up: true },
+    { lbl: "贪心策略回报", val: fmt(rl.trajectories["400"].reward, 0), unit: "", delta: "ep1 仅 " + fmt(rl.trajectories["1"].reward, 0) + " → ep400 " + fmt(rl.trajectories["400"].reward, 0), up: true },
+    { lbl: "GPU 峰值利用率", val: peakUtil, unit: "%", delta: "峰值功耗 " + fmt(peakPw, 0) + " W / 500 W", up: false },
+  ];
+  const wrap = document.getElementById("tiles");
+  for (const t of tiles) {
+    const d = document.createElement("div"); d.className = "tile";
+    const l = document.createElement("div"); l.className = "lbl"; l.textContent = t.lbl; d.appendChild(l);
+    const v = document.createElement("div"); v.className = "val"; v.textContent = t.val;
+    if (t.unit) { const s = document.createElement("small"); s.textContent = t.unit; v.appendChild(s); }
+    d.appendChild(v);
+    const dd = document.createElement("div"); dd.className = "delta" + (t.up ? " up" : ""); dd.textContent = t.delta; d.appendChild(dd);
+    wrap.appendChild(d);
+  }
+}
+
+/* checklist */
+{
+  const rows = [
+    ["SSH 登录 node09", "node09.tx.bj.stonewise.cn 可达", "✓"],
+    ["Docker + NVIDIA runtime", "默认 runtime 即 nvidia，--gpus 正常", "✓"],
+    ["容器内 GPU 可见", "torch.cuda: 8 × NVIDIA H20，绑定 device 0 运行", "✓"],
+    ["CUDA 计算", "bf16 AMP 前向/反向正常，峰值利用率 99%", "✓"],
+    ["数据下载通路", "CIFAR-10 经 hf-mirror ~8 MB/s；pypi 镜像可用", "✓"],
+    ["深度模型训练收敛", "5 epoch 测试精度 43% → 83.1%，loss 单调下降", "✓"],
+    ["强化学习训练收敛", "avg100 回报 22 → 217；贪心策略 10 → 295 步", "✓"],
+    ["GPU 过程监控", "nvidia-smi 逐秒采样：利用率 / 显存 / 功耗", "✓"],
+    ["结果可视化", "本报告（训练曲线 + GPU 监控 + 策略动画回放）", "✓"],
+  ];
+  const tbl = document.getElementById("checklist");
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  ["验证项", "证据", "状态"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr.appendChild(th); });
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tb = document.createElement("tbody");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach((c, i) => {
+      const td = document.createElement("td"); td.textContent = c;
+      if (i === 2) td.className = "ok";
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+}
+
+/* ledes */
+document.getElementById("dlLede").textContent =
+  `经典图像分类：ResNet-18（CIFAR 头）在 CIFAR-10 上训练 ${dl.epochs} 个 epoch，batch ${dl.batch_size}、bf16 混合精度、OneCycle 调度。` +
+  `全程 ${fmt1(dl.epoch_stats.reduce((a, e) => a + e.epoch_seconds, 0))} 秒完成 5 epoch，稳定约 ${fmt(dl.epoch_stats[4].images_per_sec / 1000, 1)}K img/s，测试精度 ${(dl.final_acc * 100).toFixed(1)}%，显存峰值 ${dl.max_mem_gb} GB —— 验证目标达成（非调参目标）。`;
+document.getElementById("rlLede").textContent =
+  `经典控制任务：DQN 在 CartPole-v1 上训练 ${rl.episodes} 局（经验回放 + 目标网络，ε 指数退火）。` +
+  `近 100 局平均回报由 ~22 升至 ${fmt1(rl.final_avg100)}（满分 500，官方“解决”线 475 需要更多局数），贪心策略从 10 步撑到 295 步 —— 学习信号清晰，链路可用。`;
+
+/* DL charts */
+lineChart({
+  el: "c-dl-loss", title: "训练损失", note: "每 10 步采样 · label smoothing 0.1",
+  xLabel: "step", yLabel: "loss",
+  series: [{ name: "train loss", color: "var(--s1)", points: dl.steps.map(s => [s.step, s.loss]), area: true }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmtInt(v),
+});
+lineChart({
+  el: "c-dl-acc", title: "测试集精度（每 epoch）", note: "10,000 张测试图",
+  xLabel: "epoch", yMin: 0,
+  series: [{ name: "test accuracy", color: "var(--s1)", points: dl.epoch_stats.map(e => [e.epoch, e.test_acc * 100]), marker: true }],
+  yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0),
+  endLabel: { fmt: v => fmt(v, 1) + "%" },
+});
+lineChart({
+  el: "c-dl-util", title: "GPU 利用率", note: "DL 阶段 · 每秒采样", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "util", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.util]), area: true }],
+  yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-dl-power", title: "GPU 功耗", note: "上限 500 W", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "power", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.power]), area: true }],
+  yFmt: v => fmt(v, 0) + " W", xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-dl-mem", title: "GPU 显存占用", note: "共 96 GB", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "memory", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.mem / 1024]), area: true }],
+  yFmt: v => fmt(v, 1) + " GB", xFmt: v => fmt(v, 0),
+});
+
+/* RL charts */
+lineChart({
+  el: "c-rl-reward", title: "每局回报与滑动平均", note: "CartPole-v1 · 满分 500",
+  xLabel: "episode", yMin: 0,
+  annotY: { y: rl.solved_avg, label: "“解决”线 avg100 ≥ 475" },
+  series: [
+    { name: "单局回报", color: "var(--deemph)", points: rl.episode_stats.map(e => [e.episode, e.reward]), deemph: true },
+    { name: "近100局平均", color: "var(--s1)", points: rl.episode_stats.map(e => [e.episode, e.avg100]) },
+  ],
+  yFmt: v => fmt(v, 0), xFmt: v => fmt(v, 0),
+  endLabel: { series: 1, fmt: v => fmt1(v) },
+});
+lineChart({
+  el: "c-rl-eps", title: "探索率 ε 退火", note: "指数退火 1.0 → 0.02",
+  xLabel: "episode", yMin: 0,
+  series: [{ name: "epsilon", color: "var(--s2)", points: rl.episode_stats.map(e => [e.episode, e.epsilon]) }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-rl-loss", title: "TD 损失（每局平均）", note: "smooth L1",
+  xLabel: "episode",
+  series: [{ name: "TD loss", color: "var(--s1)", points: rl.episode_stats.filter(e => e.loss != null).map(e => [e.episode, e.loss]) }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0),
+});
+barChart({
+  el: "c-rl-greedy", title: "贪心策略回报（各检查点）", note: "无探索，独立评估局",
+  xLabel: "训练局数", seriesName: "greedy reward", color: "var(--s1)",
+  bars: Object.entries(rl.trajectories).map(([ep, t]) => ({ label: "ep " + ep, v: t.reward })),
+  yFmt: v => fmt(v, 0),
+});
+
+/* CartPole animation */
+(function () {
+  const cvs = document.getElementById("cpCanvas");
+  const ctx = cvs.getContext("2d");
+  const btnsWrap = document.getElementById("cpBtns");
+  const meta = document.getElementById("cpMeta");
+  const eps = Object.keys(rl.trajectories);
+  let cur = eps[eps.length - 1], frame = 0, raf = null, lastT = 0;
+  const FPS = 25;
+
+  eps.forEach(ep => {
+    const b = document.createElement("button");
+    b.className = "cp-btn"; b.type = "button";
+    b.textContent = `第 ${ep} 局 · ${fmt(rl.trajectories[ep].reward, 0)} 步`;
+    b.setAttribute("aria-pressed", String(ep === cur));
+    b.addEventListener("click", () => {
+      cur = ep; frame = 0;
+      btnsWrap.querySelectorAll(".cp-btn").forEach(x => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+    });
+    btnsWrap.appendChild(b);
+  });
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function draw(ts) {
+    raf = requestAnimationFrame(draw);
+    if (ts - lastT < 1000 / FPS) return;
+    lastT = ts;
+    const traj = rl.trajectories[cur].states;
+    if (frame >= traj.length + FPS) frame = 0; // pause ~1s at end then loop
+    const i = Math.min(frame, traj.length - 1);
+    const [x, th] = traj[i];
+    frame++;
+
+    const W = cvs.width, H = cvs.height;
+    ctx.clearRect(0, 0, W, H);
+    const surface = css("--surface-1"), ink = css("--text-1"), mut = css("--muted"),
+          grid = css("--grid"), blue = css("--s1"), orange = css("--s2");
+    ctx.fillStyle = surface; ctx.fillRect(0, 0, W, H);
+
+    const trackY = H - 46, scale = (W - 120) / 4.8; // x ∈ [-2.4, 2.4]
+    // failure bounds
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    [-2.4, 2.4].forEach(bx => {
+      const px = W / 2 + bx * scale;
+      ctx.beginPath(); ctx.moveTo(px, trackY - 120); ctx.lineTo(px, trackY + 10); ctx.stroke();
+    });
+    // track
+    ctx.strokeStyle = mut; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(60, trackY); ctx.lineTo(W - 60, trackY); ctx.stroke();
+
+    const cx = W / 2 + x * scale, cy = trackY - 14;
+    // trail of recent cart positions
+    ctx.strokeStyle = grid; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = Math.max(0, i - 40); k <= i; k++) {
+      const px = W / 2 + traj[k][0] * scale;
+      k === Math.max(0, i - 40) ? ctx.moveTo(px, trackY + 6) : ctx.lineTo(px, trackY + 6);
+    }
+    ctx.stroke();
+    // cart
+    ctx.fillStyle = ink;
+    const cw = 46, ch = 26, r = 5;
+    ctx.beginPath();
+    ctx.roundRect(cx - cw / 2, cy - ch / 2, cw, ch, r);
+    ctx.fill();
+    // pole
+    const plen = 96;
+    ctx.strokeStyle = blue; ctx.lineWidth = 7; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - ch / 2 + 2);
+    ctx.lineTo(cx + plen * Math.sin(th), cy - ch / 2 + 2 - plen * Math.cos(th));
+    ctx.stroke();
+    // pivot
+    ctx.fillStyle = orange;
+    ctx.beginPath(); ctx.arc(cx, cy - ch / 2 + 2, 5, 0, Math.PI * 2); ctx.fill();
+    // step counter
+    ctx.fillStyle = mut; ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`step ${i + 1} / ${traj.length}`, 62, 24);
+    ctx.textAlign = "right";
+    ctx.fillText(`±12° 或出界即失败 · 每步 +1 分`, W - 62, 24);
+
+    meta.textContent = "";
+    const b1 = document.createElement("b"); b1.textContent = `第 ${cur} 局`;
+    meta.appendChild(b1);
+    meta.appendChild(document.createTextNode(` 训练后的贪心策略：坚持 `));
+    const b2 = document.createElement("b"); b2.textContent = `${fmt(rl.trajectories[cur].reward, 0)} 步`;
+    meta.appendChild(b2);
+    meta.appendChild(document.createTextNode(cur === "400" ? "（接近满分 500）" : ""));
+  }
+  raf = requestAnimationFrame(draw);
+})();
+
+/* footer */
+document.getElementById("foot").textContent =
+  `生成于 ${node.date} · 数据来源：${node.host} 容器内训练输出（dl_metrics.json / rl_metrics.json / gpu_log_*.csv）· ` +
+  `镜像 ${node.image} · 本页自包含，可直接分发。`;
+</script>
+</body>
+</html>

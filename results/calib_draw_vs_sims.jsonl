@@ -1,0 +1,3 @@
+{"ckpt": "iter050.pt", "sims": 400, "games": 64, "open_plies": 2, "seed": 20260731, "black": 11, "white": 2, "draws": 51, "draw_rate": 0.797, "avg_len": 69.9, "max_len": 81, "seconds": 134.8}
+{"ckpt": "iter050.pt", "sims": 1600, "games": 64, "open_plies": 2, "seed": 20260731, "black": 12, "white": 0, "draws": 52, "draw_rate": 0.812, "avg_len": 70.6, "max_len": 81, "seconds": 612.2}
+{"ckpt": "iter050.pt", "sims": 6400, "games": 32, "open_plies": 2, "seed": 20260731, "black": 8, "white": 0, "draws": 24, "draw_rate": 0.75, "avg_len": 68.0, "max_len": 81, "seconds": 1697.6}

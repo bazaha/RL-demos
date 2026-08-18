@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>node09 · H20 GPU 训练通路验证报告</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7;
+    --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
+    --good-text: #006300; --good: #0ca30c;
+    --deemph: #c3c2b7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d;
+      --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+      --good-text: #0ca30c;
+      --deemph: #52514e;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d;
+    --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70;
+    --good-text: #0ca30c;
+    --deemph: #52514e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-1);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+  header.rpt { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  .sub { color: var(--text-2); font-size: 13px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
+  .chip { font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+  .theme-btn { flex: none; font: inherit; font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  h2 { font-size: 16px; font-weight: 650; margin: 34px 0 4px; }
+  h2 .tag { font-size: 11px; font-weight: 500; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; margin-left: 8px; }
+  .lede { color: var(--text-2); font-size: 13px; margin: 0 0 14px; max-width: 72ch; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin: 0 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .lbl { font-size: 12px; color: var(--text-2); }
+  .tile .val { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .tile .val small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 2px; }
+  .tile .delta { font-size: 12px; margin-top: 2px; color: var(--text-2); }
+  .tile .delta.up { color: var(--good-text); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 860px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  figure.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; margin: 0; padding: 14px 14px 10px; position: relative; }
+  figure.card figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .fig-title { font-size: 13px; font-weight: 600; }
+  .fig-note { font-size: 11.5px; color: var(--muted); }
+  .fig-actions { display: flex; gap: 6px; }
+  .tbl-btn { font: inherit; font-size: 11px; color: var(--text-2); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+  .tbl-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--axis); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-2); margin: 2px 0 4px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .key i { width: 14px; height: 0; border-top: 2.5px solid; border-radius: 2px; }
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; height: auto; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.12); padding: 7px 10px; font-size: 12px; display: none; min-width: 110px; z-index: 5; }
+  .tip .tx { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+  .tip .row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+  .tip .row i { width: 10px; height: 0; border-top: 2.5px solid; border-radius: 2px; flex: none; }
+  .tip .row b { font-weight: 600; }
+  .tip .row span { color: var(--text-2); }
+  .dtable { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 4px; display: none; }
+  .dtable th, .dtable td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .dtable th { color: var(--text-2); font-weight: 500; }
+  .dtable th:first-child, .dtable td:first-child { text-align: left; }
+  figure.card.show-table .dtable { display: table; }
+  figure.card.show-table .chart-box { display: none; }
+
+  .cp-controls { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  .cp-btn { font: inherit; font-size: 12px; background: none; color: var(--text-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+  .cp-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--s1); box-shadow: inset 0 0 0 1px var(--s1); }
+  .cp-meta { font-size: 12px; color: var(--text-2); margin-bottom: 6px; }
+  .cp-meta b { color: var(--text-1); }
+  canvas#cpCanvas { width: 100%; height: auto; display: block; border-radius: 6px; }
+
+  table.check { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table.check th, table.check td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--grid); }
+  table.check th { font-size: 12px; color: var(--text-2); font-weight: 500; }
+  table.check tr:last-child td { border-bottom: none; }
+  .ok { color: var(--good-text); font-weight: 600; }
+  .mono { font-variant-numeric: tabular-nums; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="rpt">
+    <div>
+      <h1>node09 · H20 GPU 训练通路验证</h1>
+      <div class="sub">Docker 容器内深度模型训练 + 经典强化学习各跑通一轮，验证环境、数据、GPU 计算与监控全链路。</div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">主题：跟随系统</button>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>结论 · 通路检查清单</h2>
+  <p class="lede">本次验证的目标是确认链路“通常、可用、可展示”，不追求训练到最优。以下每一环均已实际执行并留有数据。</p>
+  <table class="check" id="checklist"></table>
+
+  <h2>深度模型训练 <span class="tag">ResNet-18 · CIFAR-10 · bf16 AMP · 单卡 H20</span></h2>
+  <p class="lede" id="dlLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-dl-loss"></figure>
+    <figure class="card" id="c-dl-acc"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid3">
+    <figure class="card" id="c-dl-util"></figure>
+    <figure class="card" id="c-dl-power"></figure>
+    <figure class="card" id="c-dl-mem"></figure>
+  </div>
+
+  <h2>强化学习训练 <span class="tag">DQN · CartPole-v1 · gymnasium</span></h2>
+  <p class="lede" id="rlLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-rl-reward"></figure>
+    <figure class="card" id="c-rl-eps"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-rl-loss"></figure>
+    <figure class="card" id="c-rl-greedy"></figure>
+  </div>
+
+  <h2>策略回放 <span class="tag">训练不同阶段的贪心策略 · 动画</span></h2>
+  <p class="lede">每个检查点用当时的网络权重贪心（无探索）跑一局，记录小车位置与杆角。杆保持竖直的时间越长，策略越好 —— 可直观看到从几步就倒，到接近满分的过程。</p>
+  <figure class="card">
+    <div class="cp-controls" id="cpBtns"></div>
+    <div class="cp-meta" id="cpMeta"></div>
+    <canvas id="cpCanvas" width="1040" height="240"></canvas>
+  </figure>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+
+/* ---------- theme ---------- */
+(function () {
+  const btn = document.getElementById("themeBtn");
+  const states = [["", "主题：跟随系统"], ["light", "主题：浅色"], ["dark", "主题：深色"]];
+  let i = 0;
+  btn.addEventListener("click", () => {
+    i = (i + 1) % states.length;
+    const [v, label] = states[i];
+    if (v) document.documentElement.setAttribute("data-theme", v);
+    else document.documentElement.removeAttribute("data-theme");
+    btn.textContent = label;
+  });
+})();
+
+/* ---------- helpers ---------- */
+const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("en-US");
+const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { maximumFractionDigits: d });
+function el(tag, attrs, parent) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function niceTicks(min, max, n = 4) {
+  const span = max - min || 1;
+  const step0 = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  let step = mag;
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * mag >= step0) { step = m * mag; break; }
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+
+/* ---------- line chart ----------
+   opts: {el, title, note, series:[{name, color, points:[[x,y]], marker, deemph, dash}],
+          xFmt, yFmt, xLabel, yLabel, yMin, annotY:{y,label}, endLabel} */
+function lineChart(o) {
+  const fig = document.getElementById(o.el);
+  const W = 520, H = o.h || 230, M = { t: 14, r: 14, b: 34, l: 52 };
+  const cap = document.createElement("figcaption");
+  const twrap = document.createElement("div");
+  const title = document.createElement("span"); title.className = "fig-title"; title.textContent = o.title;
+  twrap.appendChild(title);
+  if (o.note) { const n = document.createElement("span"); n.className = "fig-note"; n.textContent = " · " + o.note; twrap.appendChild(n); }
+  cap.appendChild(twrap);
+  const act = document.createElement("div"); act.className = "fig-actions";
+  const tb = document.createElement("button"); tb.className = "tbl-btn"; tb.type = "button"; tb.textContent = "表格"; tb.setAttribute("aria-pressed", "false");
+  act.appendChild(tb); cap.appendChild(act); fig.appendChild(cap);
+
+  const vis = o.series.filter(s => s.points.length);
+  if (vis.length >= 2) {
+    const lg = document.createElement("div"); lg.className = "legend";
+    for (const s of vis) {
+      const k = document.createElement("span"); k.className = "key";
+      const i = document.createElement("i"); i.style.borderTopColor = s.color;
+      if (s.dash) i.style.borderTopStyle = "dashed";
+      k.appendChild(i); k.appendChild(document.createTextNode(s.name)); lg.appendChild(k);
+    }
+    fig.appendChild(lg);
+  }
+
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null);
+  box.appendChild(svg);
+
+  const xs = vis.flatMap(s => s.points.map(p => p[0]));
+  const ys = vis.flatMap(s => s.points.map(p => p[1]));
+  const xmin = Math.min(...xs), xmax = Math.max(...xs);
+  let ymin = o.yMin !== undefined ? o.yMin : Math.min(...ys, o.annotY ? o.annotY.y : Infinity);
+  let ymax = Math.max(...ys, o.annotY ? o.annotY.y : -Infinity);
+  if (ymin === ymax) { ymin -= 1; ymax += 1; }
+  const yticks = niceTicks(ymin, ymax, 4);
+  ymin = Math.min(ymin, yticks[0]); ymax = Math.max(ymax, yticks[yticks.length - 1]);
+  const X = x => M.l + (x - xmin) / (xmax - xmin || 1) * (W - M.l - M.r);
+  const Y = y => H - M.b - (y - ymin) / (ymax - ymin || 1) * (H - M.t - M.b);
+
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  const xticks = niceTicks(xmin, xmax, 5).filter(t => t >= xmin - 1e-9 && t <= xmax + 1e-9);
+  for (const t of xticks) {
+    const tx = el("text", { x: X(t), y: H - M.b + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.xFmt ? o.xFmt(t) : fmt(t);
+  }
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+
+  if (o.annotY) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(o.annotY.y), y2: Y(o.annotY.y), stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    const tx = el("text", { x: W - M.r, y: Y(o.annotY.y) - 5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    tx.textContent = o.annotY.label;
+  }
+
+  for (const s of vis) {
+    if (s.area) {
+      const d = "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L") +
+        `L${X(s.points[s.points.length - 1][0])},${Y(Math.max(ymin, 0))}L${X(s.points[0][0])},${Y(Math.max(ymin, 0))}Z`;
+      el("path", { d, fill: s.color, opacity: 0.1, stroke: "none" }, svg);
+    }
+    el("path", {
+      d: "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L"),
+      fill: "none", stroke: s.color, "stroke-width": s.deemph ? 1.5 : 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round",
+      ...(s.dash ? { "stroke-dasharray": "5 4" } : {}), opacity: s.deemph ? 0.55 : 1,
+    }, svg);
+    if (s.marker) for (const p of s.points)
+      el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 4, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2 }, svg);
+  }
+  if (o.endLabel) {
+    const s = vis[o.endLabel.series || 0];
+    const p = s.points[s.points.length - 1];
+    const tx = el("text", { x: X(p[0]) - 6, y: Y(p[1]) - 9, "text-anchor": "end", "font-size": 11, "font-weight": 600, fill: "var(--text-1)" }, svg);
+    tx.textContent = o.endLabel.fmt ? o.endLabel.fmt(p[1]) : fmt(p[1]);
+  }
+
+  /* crosshair + tooltip */
+  const cross = el("line", { y1: M.t, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const dots = vis.map(s => el("circle", { r: 4.5, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" }, svg));
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const xsSorted = [...new Set(vis.flatMap(s => s.points.map(p => p[0])))].sort((a, b) => a - b);
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) / r.width * W;
+    if (mx < M.l || mx > W - M.r) { hide(); return; }
+    const xv = xmin + (mx - M.l) / (W - M.l - M.r) * (xmax - xmin);
+    let best = xsSorted[0];
+    for (const x of xsSorted) if (Math.abs(x - xv) < Math.abs(best - xv)) best = x;
+    cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best));
+    cross.setAttribute("visibility", "visible");
+    tip.textContent = "";
+    const tx = document.createElement("div"); tx.className = "tx";
+    tx.textContent = (o.xLabel || "x") + " " + (o.xFmt ? o.xFmt(best) : fmt(best));
+    tip.appendChild(tx);
+    vis.forEach((s, i) => {
+      const p = s.points.reduce((a, b) => Math.abs(b[0] - best) < Math.abs(a[0] - best) ? b : a);
+      if (Math.abs(p[0] - best) > (xmax - xmin) / Math.max(8, s.points.length) * 2) { dots[i].setAttribute("visibility", "hidden"); return; }
+      dots[i].setAttribute("cx", X(p[0])); dots[i].setAttribute("cy", Y(p[1]));
+      dots[i].setAttribute("visibility", "visible");
+      const row = document.createElement("div"); row.className = "row";
+      const key = document.createElement("i"); key.style.borderTopColor = s.color; row.appendChild(key);
+      const b = document.createElement("b"); b.textContent = o.yFmt ? o.yFmt(p[1]) : fmt(p[1]); row.appendChild(b);
+      const nm = document.createElement("span"); nm.textContent = s.name; row.appendChild(nm);
+      tip.appendChild(row);
+    });
+    tip.style.display = "block";
+    const bx = box.getBoundingClientRect();
+    let left = (X(best) / W) * bx.width + 14;
+    if (left + tip.offsetWidth > bx.width - 4) left = (X(best) / W) * bx.width - tip.offsetWidth - 14;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(0, (ev.clientY - bx.top) - tip.offsetHeight - 12) + "px";
+  });
+  function hide() { cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); tip.style.display = "none"; }
+  svg.addEventListener("pointerleave", hide);
+
+  /* table view */
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  const th0 = document.createElement("th"); th0.textContent = o.xLabel || "x"; hr.appendChild(th0);
+  for (const s of vis) { const th = document.createElement("th"); th.textContent = s.name; hr.appendChild(th); }
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const step = Math.ceil(xsSorted.length / 40);
+  xsSorted.filter((_, i) => i % step === 0 || i === xsSorted.length - 1).forEach(x => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = o.xFmt ? o.xFmt(x) : fmt(x); tr.appendChild(td0);
+    for (const s of vis) {
+      const p = s.points.find(p => p[0] === x) || s.points.reduce((a, b) => Math.abs(b[0] - x) < Math.abs(a[0] - x) ? b : a);
+      const td = document.createElement("td"); td.textContent = o.yFmt ? o.yFmt(p[1]) : fmt(p[1]); tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+  tb.addEventListener("click", () => {
+    const on = fig.classList.toggle("show-table");
+    tb.setAttribute("aria-pressed", String(on));
+  });
+}
+
+/* ---------- bar chart (few bars, direct-labeled) ---------- */
+function barChart(o) {
+  const fig = document.getElementById(o.el);
+  const W = 520, H = o.h || 230, M = { t: 22, r: 14, b: 34, l: 52 };
+  const cap = document.createElement("figcaption");
+  const tw = document.createElement("div");
+  const title = document.createElement("span"); title.className = "fig-title"; title.textContent = o.title; tw.appendChild(title);
+  if (o.note) { const n = document.createElement("span"); n.className = "fig-note"; n.textContent = " · " + o.note; tw.appendChild(n); }
+  cap.appendChild(tw);
+  const act = document.createElement("div"); act.className = "fig-actions";
+  const tb = document.createElement("button"); tb.className = "tbl-btn"; tb.type = "button"; tb.textContent = "表格"; tb.setAttribute("aria-pressed", "false");
+  act.appendChild(tb); cap.appendChild(act); fig.appendChild(cap);
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null); box.appendChild(svg);
+
+  const ymax = Math.max(...o.bars.map(b => b.v));
+  const yticks = niceTicks(0, ymax, 4);
+  const top = yticks[yticks.length - 1];
+  const Y = v => H - M.b - v / top * (H - M.t - M.b);
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+
+  const n = o.bars.length;
+  const band = (W - M.l - M.r) / n;
+  const bw = Math.min(24, band * 0.5);
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  o.bars.forEach((b, i) => {
+    const cx = M.l + band * (i + 0.5);
+    const y = Y(b.v), h = H - M.b - y;
+    const r = Math.min(4, bw / 2, h);
+    el("path", {
+      d: `M${cx - bw / 2},${H - M.b} L${cx - bw / 2},${y + r} Q${cx - bw / 2},${y} ${cx - bw / 2 + r},${y} L${cx + bw / 2 - r},${y} Q${cx + bw / 2},${y} ${cx + bw / 2},${y + r} L${cx + bw / 2},${H - M.b} Z`,
+      fill: o.color, class: "barmark",
+    }, svg);
+    const vl = el("text", { x: cx, y: y - 6, "text-anchor": "middle", "font-size": 11, "font-weight": 600, fill: "var(--text-1)" }, svg);
+    vl.textContent = o.yFmt ? o.yFmt(b.v) : fmt(b.v);
+    const xl = el("text", { x: cx, y: H - M.b + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    xl.textContent = b.label;
+    const hit = el("rect", { x: cx - band / 2, y: M.t, width: band, height: H - M.t - M.b, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", (ev) => {
+      tip.textContent = "";
+      const tx = document.createElement("div"); tx.className = "tx"; tx.textContent = b.label; tip.appendChild(tx);
+      const row = document.createElement("div"); row.className = "row";
+      const key = document.createElement("i"); key.style.borderTopColor = o.color; row.appendChild(key);
+      const bb = document.createElement("b"); bb.textContent = (o.yFmt ? o.yFmt(b.v) : fmt(b.v)); row.appendChild(bb);
+      const nm = document.createElement("span"); nm.textContent = o.seriesName || ""; row.appendChild(nm);
+      tip.appendChild(row);
+      tip.style.display = "block";
+      const bx = box.getBoundingClientRect();
+      let left = (cx / W) * bx.width + 12;
+      if (left + tip.offsetWidth > bx.width - 4) left = (cx / W) * bx.width - tip.offsetWidth - 12;
+      tip.style.left = left + "px";
+      tip.style.top = Math.max(0, (Y(b.v) / H) * bx.height - tip.offsetHeight - 8) + "px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  });
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 4, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr2 = document.createElement("tr");
+  [o.xLabel || "类别", o.seriesName || "值"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr2.appendChild(th); });
+  thead.appendChild(hr2); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  o.bars.forEach(b => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = b.label; tr.appendChild(td0);
+    const td1 = document.createElement("td"); td1.textContent = o.yFmt ? o.yFmt(b.v) : fmt(b.v); tr.appendChild(td1);
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+  tb.addEventListener("click", () => { const on = fig.classList.toggle("show-table"); tb.setAttribute("aria-pressed", String(on)); });
+}
+
+/* ---------- build page ---------- */
+const { dl, rl, gpu_dl, gpu_rl, node } = DATA;
+
+/* chips */
+{
+  const chips = document.getElementById("chips");
+  [node.date + " · " + node.host, node.gpus, "Driver " + node.driver, node.image,
+   "PyTorch " + dl.torch.split("+")[0] + " · CUDA " + dl.cuda].forEach(t => {
+    const c = document.createElement("span"); c.className = "chip"; c.textContent = t; chips.appendChild(c);
+  });
+}
+
+/* tiles */
+{
+  const dlSecs = dl.epoch_stats.reduce((a, e) => a + e.epoch_seconds, 0);
+  const peakUtil = Math.max(...gpu_dl.map(g => g.util));
+  const peakPw = Math.max(...gpu_dl.map(g => g.power));
+  const tiles = [
+    { lbl: "DL 测试精度（5 epoch）", val: (dl.final_acc * 100).toFixed(1), unit: "%", delta: "ResNet-18 · CIFAR-10 · " + fmt1(dlSecs) + "s", up: true },
+    { lbl: "训练吞吐", val: fmt(dl.epoch_stats[4].images_per_sec / 1000, 1) + "K", unit: "img/s", delta: "batch 512 · bf16 AMP", up: false },
+    { lbl: "RL 近100局平均回报", val: fmt1(rl.final_avg100), unit: "", delta: "起步 ~22 → 400 局后 " + fmt1(rl.final_avg100) + "（满分 500）", up: true },
+    { lbl: "贪心策略回报", val: fmt(rl.trajectories["400"].reward, 0), unit: "", delta: "ep1 仅 " + fmt(rl.trajectories["1"].reward, 0) + " → ep400 " + fmt(rl.trajectories["400"].reward, 0), up: true },
+    { lbl: "GPU 峰值利用率", val: peakUtil, unit: "%", delta: "峰值功耗 " + fmt(peakPw, 0) + " W / 500 W", up: false },
+  ];
+  const wrap = document.getElementById("tiles");
+  for (const t of tiles) {
+    const d = document.createElement("div"); d.className = "tile";
+    const l = document.createElement("div"); l.className = "lbl"; l.textContent = t.lbl; d.appendChild(l);
+    const v = document.createElement("div"); v.className = "val"; v.textContent = t.val;
+    if (t.unit) { const s = document.createElement("small"); s.textContent = t.unit; v.appendChild(s); }
+    d.appendChild(v);
+    const dd = document.createElement("div"); dd.className = "delta" + (t.up ? " up" : ""); dd.textContent = t.delta; d.appendChild(dd);
+    wrap.appendChild(d);
+  }
+}
+
+/* checklist */
+{
+  const rows = [
+    ["SSH 登录 node09", "node09.tx.bj.stonewise.cn 可达", "✓"],
+    ["Docker + NVIDIA runtime", "默认 runtime 即 nvidia，--gpus 正常", "✓"],
+    ["容器内 GPU 可见", "torch.cuda: 8 × NVIDIA H20，绑定 device 0 运行", "✓"],
+    ["CUDA 计算", "bf16 AMP 前向/反向正常，峰值利用率 99%", "✓"],
+    ["数据下载通路", "CIFAR-10 经 hf-mirror ~8 MB/s；pypi 镜像可用", "✓"],
+    ["深度模型训练收敛", "5 epoch 测试精度 43% → 83.1%，loss 单调下降", "✓"],
+    ["强化学习训练收敛", "avg100 回报 22 → 217；贪心策略 10 → 295 步", "✓"],
+    ["GPU 过程监控", "nvidia-smi 逐秒采样：利用率 / 显存 / 功耗", "✓"],
+    ["结果可视化", "本报告（训练曲线 + GPU 监控 + 策略动画回放）", "✓"],
+  ];
+  const tbl = document.getElementById("checklist");
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  ["验证项", "证据", "状态"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr.appendChild(th); });
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tb = document.createElement("tbody");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach((c, i) => {
+      const td = document.createElement("td"); td.textContent = c;
+      if (i === 2) td.className = "ok";
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+}
+
+/* ledes */
+document.getElementById("dlLede").textContent =
+  `经典图像分类：ResNet-18（CIFAR 头）在 CIFAR-10 上训练 ${dl.epochs} 个 epoch，batch ${dl.batch_size}、bf16 混合精度、OneCycle 调度。` +
+  `全程 ${fmt1(dl.epoch_stats.reduce((a, e) => a + e.epoch_seconds, 0))} 秒完成 5 epoch，稳定约 ${fmt(dl.epoch_stats[4].images_per_sec / 1000, 1)}K img/s，测试精度 ${(dl.final_acc * 100).toFixed(1)}%，显存峰值 ${dl.max_mem_gb} GB —— 验证目标达成（非调参目标）。`;
+document.getElementById("rlLede").textContent =
+  `经典控制任务：DQN 在 CartPole-v1 上训练 ${rl.episodes} 局（经验回放 + 目标网络，ε 指数退火）。` +
+  `近 100 局平均回报由 ~22 升至 ${fmt1(rl.final_avg100)}（满分 500，官方“解决”线 475 需要更多局数），贪心策略从 10 步撑到 295 步 —— 学习信号清晰，链路可用。`;
+
+/* DL charts */
+lineChart({
+  el: "c-dl-loss", title: "训练损失", note: "每 10 步采样 · label smoothing 0.1",
+  xLabel: "step", yLabel: "loss",
+  series: [{ name: "train loss", color: "var(--s1)", points: dl.steps.map(s => [s.step, s.loss]), area: true }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmtInt(v),
+});
+lineChart({
+  el: "c-dl-acc", title: "测试集精度（每 epoch）", note: "10,000 张测试图",
+  xLabel: "epoch", yMin: 0,
+  series: [{ name: "test accuracy", color: "var(--s1)", points: dl.epoch_stats.map(e => [e.epoch, e.test_acc * 100]), marker: true }],
+  yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0),
+  endLabel: { fmt: v => fmt(v, 1) + "%" },
+});
+lineChart({
+  el: "c-dl-util", title: "GPU 利用率", note: "DL 阶段 · 每秒采样", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "util", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.util]), area: true }],
+  yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-dl-power", title: "GPU 功耗", note: "上限 500 W", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "power", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.power]), area: true }],
+  yFmt: v => fmt(v, 0) + " W", xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-dl-mem", title: "GPU 显存占用", note: "共 96 GB", h: 190,
+  xLabel: "秒", yMin: 0,
+  series: [{ name: "memory", color: "var(--s1)", points: gpu_dl.map(g => [g.t, g.mem / 1024]), area: true }],
+  yFmt: v => fmt(v, 1) + " GB", xFmt: v => fmt(v, 0),
+});
+
+/* RL charts */
+lineChart({
+  el: "c-rl-reward", title: "每局回报与滑动平均", note: "CartPole-v1 · 满分 500",
+  xLabel: "episode", yMin: 0,
+  annotY: { y: rl.solved_avg, label: "“解决”线 avg100 ≥ 475" },
+  series: [
+    { name: "单局回报", color: "var(--deemph)", points: rl.episode_stats.map(e => [e.episode, e.reward]), deemph: true },
+    { name: "近100局平均", color: "var(--s1)", points: rl.episode_stats.map(e => [e.episode, e.avg100]) },
+  ],
+  yFmt: v => fmt(v, 0), xFmt: v => fmt(v, 0),
+  endLabel: { series: 1, fmt: v => fmt1(v) },
+});
+lineChart({
+  el: "c-rl-eps", title: "探索率 ε 退火", note: "指数退火 1.0 → 0.02",
+  xLabel: "episode", yMin: 0,
+  series: [{ name: "epsilon", color: "var(--s2)", points: rl.episode_stats.map(e => [e.episode, e.epsilon]) }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0),
+});
+lineChart({
+  el: "c-rl-loss", title: "TD 损失（每局平均）", note: "smooth L1",
+  xLabel: "episode",
+  series: [{ name: "TD loss", color: "var(--s1)", points: rl.episode_stats.filter(e => e.loss != null).map(e => [e.episode, e.loss]) }],
+  yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0),
+});
+barChart({
+  el: "c-rl-greedy", title: "贪心策略回报（各检查点）", note: "无探索，独立评估局",
+  xLabel: "训练局数", seriesName: "greedy reward", color: "var(--s1)",
+  bars: Object.entries(rl.trajectories).map(([ep, t]) => ({ label: "ep " + ep, v: t.reward })),
+  yFmt: v => fmt(v, 0),
+});
+
+/* CartPole animation */
+(function () {
+  const cvs = document.getElementById("cpCanvas");
+  const ctx = cvs.getContext("2d");
+  const btnsWrap = document.getElementById("cpBtns");
+  const meta = document.getElementById("cpMeta");
+  const eps = Object.keys(rl.trajectories);
+  let cur = eps[eps.length - 1], frame = 0, raf = null, lastT = 0;
+  const FPS = 25;
+
+  eps.forEach(ep => {
+    const b = document.createElement("button");
+    b.className = "cp-btn"; b.type = "button";
+    b.textContent = `第 ${ep} 局 · ${fmt(rl.trajectories[ep].reward, 0)} 步`;
+    b.setAttribute("aria-pressed", String(ep === cur));
+    b.addEventListener("click", () => {
+      cur = ep; frame = 0;
+      btnsWrap.querySelectorAll(".cp-btn").forEach(x => x.setAttribute("aria-pressed", "false"));
+      b.setAttribute("aria-pressed", "true");
+    });
+    btnsWrap.appendChild(b);
+  });
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function draw(ts) {
+    raf = requestAnimationFrame(draw);
+    if (ts - lastT < 1000 / FPS) return;
+    lastT = ts;
+    const traj = rl.trajectories[cur].states;
+    if (frame >= traj.length + FPS) frame = 0; // pause ~1s at end then loop
+    const i = Math.min(frame, traj.length - 1);
+    const [x, th] = traj[i];
+    frame++;
+
+    const W = cvs.width, H = cvs.height;
+    ctx.clearRect(0, 0, W, H);
+    const surface = css("--surface-1"), ink = css("--text-1"), mut = css("--muted"),
+          grid = css("--grid"), blue = css("--s1"), orange = css("--s2");
+    ctx.fillStyle = surface; ctx.fillRect(0, 0, W, H);
+
+    const trackY = H - 46, scale = (W - 120) / 4.8; // x ∈ [-2.4, 2.4]
+    // failure bounds
+    ctx.strokeStyle = grid; ctx.lineWidth = 1;
+    [-2.4, 2.4].forEach(bx => {
+      const px = W / 2 + bx * scale;
+      ctx.beginPath(); ctx.moveTo(px, trackY - 120); ctx.lineTo(px, trackY + 10); ctx.stroke();
+    });
+    // track
+    ctx.strokeStyle = mut; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(60, trackY); ctx.lineTo(W - 60, trackY); ctx.stroke();
+
+    const cx = W / 2 + x * scale, cy = trackY - 14;
+    // trail of recent cart positions
+    ctx.strokeStyle = grid; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let k = Math.max(0, i - 40); k <= i; k++) {
+      const px = W / 2 + traj[k][0] * scale;
+      k === Math.max(0, i - 40) ? ctx.moveTo(px, trackY + 6) : ctx.lineTo(px, trackY + 6);
+    }
+    ctx.stroke();
+    // cart
+    ctx.fillStyle = ink;
+    const cw = 46, ch = 26, r = 5;
+    ctx.beginPath();
+    ctx.roundRect(cx - cw / 2, cy - ch / 2, cw, ch, r);
+    ctx.fill();
+    // pole
+    const plen = 96;
+    ctx.strokeStyle = blue; ctx.lineWidth = 7; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - ch / 2 + 2);
+    ctx.lineTo(cx + plen * Math.sin(th), cy - ch / 2 + 2 - plen * Math.cos(th));
+    ctx.stroke();
+    // pivot
+    ctx.fillStyle = orange;
+    ctx.beginPath(); ctx.arc(cx, cy - ch / 2 + 2, 5, 0, Math.PI * 2); ctx.fill();
+    // step counter
+    ctx.fillStyle = mut; ctx.font = "12px system-ui, sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`step ${i + 1} / ${traj.length}`, 62, 24);
+    ctx.textAlign = "right";
+    ctx.fillText(`±12° 或出界即失败 · 每步 +1 分`, W - 62, 24);
+
+    meta.textContent = "";
+    const b1 = document.createElement("b"); b1.textContent = `第 ${cur} 局`;
+    meta.appendChild(b1);
+    meta.appendChild(document.createTextNode(` 训练后的贪心策略：坚持 `));
+    const b2 = document.createElement("b"); b2.textContent = `${fmt(rl.trajectories[cur].reward, 0)} 步`;
+    meta.appendChild(b2);
+    meta.appendChild(document.createTextNode(cur === "400" ? "（接近满分 500）" : ""));
+  }
+  raf = requestAnimationFrame(draw);
+})();
+
+/* footer */
+document.getElementById("foot").textContent =
+  `生成于 ${node.date} · 数据来源：${node.host} 容器内训练输出（dl_metrics.json / rl_metrics.json / gpu_log_*.csv）· ` +
+  `镜像 ${node.image} · 本页自包含，可直接分发。`;
+</script>
+</body>
+</html>

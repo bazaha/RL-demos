@@ -1,0 +1,1096 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AlphaZero 五子棋 · 人机对战</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7; --surface-2: #f2f1ec;
+    --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #8a63d2;
+    --good-text: #006300; --good: #0ca30c; --bad-text: #b3261e;
+    --deemph: #c3c2b7;
+    --board: #e8d9b5; --board-line: #a08b62;
+    --stone-b: #17171a; --stone-w: #fbfbfa;
+    --heat: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d; --surface-2: #222220;
+      --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9a76dd;
+      --good-text: #0ca30c; --bad-text: #e8695f;
+      --deemph: #52514e;
+      --board: #4a4130; --board-line: #7d6d4d;
+      --stone-b: #0a0a0c; --stone-w: #f4f3ef;
+      --heat: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d; --surface-2: #222220;
+    --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9a76dd;
+    --good-text: #0ca30c; --bad-text: #e8695f;
+    --deemph: #52514e;
+    --board: #4a4130; --board-line: #7d6d4d;
+    --stone-b: #0a0a0c; --stone-w: #f4f3ef;
+    --heat: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-1);
+    font: 14px/1.55 -apple-system, "SF Pro Text", "PingFang SC", "Segoe UI",
+      "Microsoft YaHei", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1060px; margin: 0 auto; padding: 18px 20px 40px; }
+  header.rpt { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  h1 { font-size: 19px; font-weight: 660; margin: 4px 0 2px; letter-spacing: .1px; }
+  .sub { color: var(--text-2); font-size: 13px; max-width: 720px; }
+  .theme-btn {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-2);
+    border-radius: 8px; padding: 5px 10px; font-size: 12px; cursor: pointer; white-space: nowrap;
+  }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+  .chip {
+    font-size: 11.5px; color: var(--text-2); background: var(--surface-2);
+    border: 1px solid var(--border); padding: 2px 9px; border-radius: 999px;
+  }
+  .chip.ok { color: var(--good-text); }
+  .chip.err { color: var(--bad-text); }
+  .layout { display: grid; grid-template-columns: minmax(0, 640px) minmax(240px, 1fr); gap: 16px; margin-top: 14px; }
+  .layout > .card { min-width: 0; }
+  @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  .card {
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 12px; padding: 14px;
+  }
+  #boardBox { position: relative; }
+  #bd { display: block; width: 100%; height: auto; border-radius: 8px; cursor: pointer; }
+  #bd.busy { cursor: progress; }
+  .panel h3 { margin: 0 0 8px; font-size: 13.5px; font-weight: 640; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
+  .row label { color: var(--text-2); font-size: 12.5px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .seg button {
+    border: 0; background: var(--surface-1); color: var(--text-2);
+    padding: 5px 12px; font-size: 12.5px; cursor: pointer;
+  }
+  .seg button + button { border-left: 1px solid var(--border); }
+  .seg button.on { background: var(--s1); color: #fff; }
+  .btn {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-1);
+    border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer;
+  }
+  .btn.primary { background: var(--s1); border-color: var(--s1); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: .45; cursor: default; }
+  #status { font-size: 13.5px; margin: 10px 0 6px; min-height: 20px; }
+  #status b { font-weight: 640; }
+  .vbar-box { margin: 10px 0 2px; }
+  .vbar-lab { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--muted); }
+  .vbar { height: 10px; border-radius: 5px; overflow: hidden; background: var(--stone-w); border: 1px solid var(--border); }
+  .vbar i { display: block; height: 100%; background: var(--stone-b); width: 50%; transition: width .35s; }
+  #prog { height: 4px; border-radius: 2px; background: var(--surface-2); overflow: hidden; margin: 6px 0 2px; visibility: hidden; }
+  #prog i { display: block; height: 100%; width: 0; background: var(--s1); transition: width .15s; }
+  #moves {
+    font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: var(--text-2); max-height: 180px; overflow-y: auto;
+    background: var(--surface-2); border-radius: 8px; padding: 8px 10px; margin-top: 8px;
+    white-space: pre-wrap;
+  }
+  .note { color: var(--muted); font-size: 12px; margin-top: 10px; }
+  footer { color: var(--muted); font-size: 11.5px; margin-top: 22px; border-top: 1px solid var(--border); padding-top: 10px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="rpt">
+    <div>
+      <h1>AlphaZero 五子棋 · 人机对战</h1>
+      <div class="sub">对手是 node09 上从零自我对弈训练 40 轮的 15×15 模型（iter040，10.53M 参数）。
+        权重以 fp16 内嵌在本页，推理在你的浏览器里完成（WebGL2 加速，无网络请求）。</div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">主题：跟随系统</button>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <div class="layout">
+    <div class="card" id="boardBox">
+      <canvas id="bd" width="640" height="640"></canvas>
+    </div>
+    <div class="card panel">
+      <h3>对局</h3>
+      <div class="row">
+        <label>执子</label>
+        <span class="seg" id="segSide">
+          <button data-v="1" class="on">我执黑（先手）</button>
+          <button data-v="-1">我执白</button>
+        </span>
+      </div>
+      <div class="row">
+        <label>AI 强度</label>
+        <span class="seg" id="segLevel">
+          <button data-v="0">原始策略</button>
+          <button data-v="128">搜索 128</button>
+          <button data-v="400" class="on">搜索 400</button>
+        </span>
+      </div>
+      <div class="row">
+        <button class="btn primary" id="btnNew">新对局</button>
+        <button class="btn" id="btnUndo" disabled>悔棋</button>
+        <button class="btn" id="btnHeat" disabled>AI 视角</button>
+      </div>
+      <div id="status">加载引擎中…</div>
+      <div id="prog"><i></i></div>
+      <div class="vbar-box">
+        <div class="vbar-lab"><span>黑方胜率（模型价值头）</span><span id="vtxt">50%</span></div>
+        <div class="vbar"><i id="vfill"></i></div>
+      </div>
+      <div id="moves"></div>
+      <div class="note" id="engNote"></div>
+    </div>
+  </div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script type="text/plain" id="w64">__WEIGHTS_B64__</script>
+<script>
+"use strict";
+/* ================= constants & embedded data ================= */
+const MANIFEST = __MANIFEST__;
+const TESTVEC = __TESTVEC__;
+const B = MANIFEST.board, N_ACT = B * B;
+const CH = MANIFEST.channels, BLOCKS = MANIFEST.blocks;
+const GN_G = MANIFEST.gn_groups, GN_EPS = MANIFEST.gn_eps;
+const C_PUCT = 3.0;
+
+/* ================= fp16 weights ================= */
+const W = {};   // name -> {data: Float32Array, shape}
+(function loadWeights() {
+  const b64 = document.getElementById("w64").textContent.trim();
+  const bin = atob(b64);
+  const n = bin.length;
+  const u8 = new Uint8Array(n);
+  for (let i = 0; i < n; i++) u8[i] = bin.charCodeAt(i);
+  const u16 = new Uint16Array(u8.buffer);
+  const f32all = new Float32Array(u16.length);
+  // fp16 -> fp32 via a 2^16 lookup table: 10.5M conversions in ~50 ms
+  const lut = new Float32Array(65536);
+  const tmpU = new Uint32Array(1), tmpF = new Float32Array(tmpU.buffer);
+  for (let h = 0; h < 65536; h++) {
+    const s = (h & 0x8000) << 16, e = (h & 0x7c00) >> 10, m = h & 0x03ff;
+    let bits;
+    if (e === 0) {
+      if (m === 0) bits = s;
+      else {                                  // subnormal
+        let mm = m, ee = -1;
+        do { mm <<= 1; ee++; } while (!(mm & 0x400));
+        bits = s | ((127 - 15 - ee) << 23) | ((mm & 0x3ff) << 13);
+      }
+    } else if (e === 31) bits = s | 0x7f800000 | (m << 13);
+    else bits = s | ((e - 15 + 127) << 23) | (m << 13);
+    tmpU[0] = bits; lut[h] = tmpF[0];
+  }
+  for (let i = 0; i < u16.length; i++) f32all[i] = lut[u16[i]];
+  for (const p of MANIFEST.params) {
+    const o = p.offset / 2;
+    W[p.name] = { data: f32all.subarray(o, o + p.numel), shape: p.shape };
+  }
+})();
+
+/* ================= game state (mirrors the trainer's State) ================= */
+const DIRS = [[0, 1], [1, 0], [1, 1], [1, -1]];
+class State {
+  constructor() {
+    this.board = new Int8Array(N_ACT);
+    this.toPlay = 1;
+    this.lastMove = -1;
+    this.nMoves = 0;
+    this.winner = 0;
+    this.done = false;
+  }
+  clone() {
+    const s = new State();
+    s.board.set(this.board);
+    s.toPlay = this.toPlay; s.lastMove = this.lastMove;
+    s.nMoves = this.nMoves; s.winner = this.winner; s.done = this.done;
+    return s;
+  }
+  play(a) {
+    const r = (a / B) | 0, c = a % B, p = this.toPlay;
+    this.board[a] = p;
+    this.lastMove = a; this.nMoves++;
+    if (winLine(this.board, r, c, p)) { this.winner = p; this.done = true; }
+    else if (this.nMoves === N_ACT) { this.winner = 0; this.done = true; }
+    this.toPlay = -p;
+  }
+  terminalValue() {          // from the mover's point of view, like the trainer
+    if (this.winner === 0) return 0;
+    return this.winner === this.toPlay ? 1 : -1;
+  }
+  encode(dst) {              // 4 planes, mover's POV, into Float32Array(4*N_ACT)
+    dst.fill(0);
+    const tp = this.toPlay;
+    for (let i = 0; i < N_ACT; i++) {
+      const v = this.board[i];
+      if (v === tp) dst[i] = 1;
+      else if (v === -tp) dst[N_ACT + i] = 1;
+    }
+    if (this.lastMove >= 0) dst[2 * N_ACT + this.lastMove] = 1;
+    if (tp === 1) dst.fill(1, 3 * N_ACT, 4 * N_ACT);
+  }
+}
+function winLine(board, r, c, p) {
+  /* returns the >=5 winning line through (r,c) as [cells] or null */
+  for (const [dr, dc] of DIRS) {
+    const cells = [r * B + c];
+    for (const sgn of [1, -1]) {
+      let rr = r + sgn * dr, cc = c + sgn * dc;
+      while (rr >= 0 && rr < B && cc >= 0 && cc < B && board[rr * B + cc] === p) {
+        if (sgn === 1) cells.push(rr * B + cc); else cells.unshift(rr * B + cc);
+        rr += sgn * dr; cc += sgn * dc;
+      }
+    }
+    if (cells.length >= MANIFEST.n_in_row) return cells;
+  }
+  return null;
+}
+
+/* ================= CPU reference ops ================= */
+function conv3x3(inp, cin, out, cout, w) {
+  // inp/out: Float32Array [c][r][col]; w: [cout][cin][3][3]
+  for (let oc = 0; oc < cout; oc++) {
+    const wo = oc * cin * 9;
+    for (let r = 0; r < B; r++) for (let c = 0; c < B; c++) {
+      let acc = 0;
+      for (let ic = 0; ic < cin; ic++) {
+        const wb = wo + ic * 9, ib = ic * N_ACT;
+        for (let ky = 0; ky < 3; ky++) {
+          const rr = r + ky - 1;
+          if (rr < 0 || rr >= B) continue;
+          const rb = ib + rr * B;
+          for (let kx = 0; kx < 3; kx++) {
+            const cc = c + kx - 1;
+            if (cc < 0 || cc >= B) continue;
+            acc += w[wb + ky * 3 + kx] * inp[rb + cc];
+          }
+        }
+      }
+      out[oc * N_ACT + r * B + c] = acc;
+    }
+  }
+}
+function conv1x1(inp, cin, out, cout, w) {
+  for (let oc = 0; oc < cout; oc++) {
+    const wb = oc * cin;
+    out.fill(0, oc * N_ACT, (oc + 1) * N_ACT);
+    for (let ic = 0; ic < cin; ic++) {
+      const s = w[wb + ic], ib = ic * N_ACT, ob = oc * N_ACT;
+      if (s === 0) continue;
+      for (let i = 0; i < N_ACT; i++) out[ob + i] += s * inp[ib + i];
+    }
+  }
+}
+function groupNorm(x, cch, gamma, beta, relu) {
+  const per = cch / GN_G;
+  for (let g = 0; g < GN_G; g++) {
+    const lo = g * per * N_ACT, hi = (g + 1) * per * N_ACT;
+    let mean = 0;
+    for (let i = lo; i < hi; i++) mean += x[i];
+    mean /= (hi - lo);
+    let vv = 0;
+    for (let i = lo; i < hi; i++) { const d = x[i] - mean; vv += d * d; }
+    vv /= (hi - lo);
+    const inv = 1 / Math.sqrt(vv + GN_EPS);
+    for (let ch = g * per; ch < (g + 1) * per; ch++) {
+      const a = gamma[ch] * inv, bofs = beta[ch] - mean * a, cb = ch * N_ACT;
+      for (let i = 0; i < N_ACT; i++) {
+        let v = x[cb + i] * a + bofs;
+        if (relu && v < 0) v = 0;
+        x[cb + i] = v;
+      }
+    }
+  }
+}
+function addRelu(x, res, n) {
+  for (let i = 0; i < n; i++) { let v = x[i] + res[i]; x[i] = v < 0 ? 0 : v; }
+}
+function linear(inp, nin, w, b, nout, out) {
+  for (let o = 0; o < nout; o++) {
+    let acc = b[o];
+    const wb = o * nin;
+    for (let i = 0; i < nin; i++) acc += w[wb + i] * inp[i];
+    out[o] = acc;
+  }
+}
+
+function cpuTrunk(x4) {
+  const a = new Float32Array(CH * N_ACT), tmp = new Float32Array(CH * N_ACT),
+        res = new Float32Array(CH * N_ACT);
+  conv3x3(x4, 4, a, CH, W["stem.0.weight"].data);
+  groupNorm(a, CH, W["stem.1.weight"].data, W["stem.1.bias"].data, true);
+  for (let bl = 0; bl < BLOCKS; bl++) {
+    res.set(a);
+    conv3x3(a, CH, tmp, CH, W[`body.${bl}.c1.weight`].data);
+    groupNorm(tmp, CH, W[`body.${bl}.n1.weight`].data, W[`body.${bl}.n1.bias`].data, true);
+    conv3x3(tmp, CH, a, CH, W[`body.${bl}.c2.weight`].data);
+    groupNorm(a, CH, W[`body.${bl}.n2.weight`].data, W[`body.${bl}.n2.bias`].data, false);
+    addRelu(a, res, CH * N_ACT);
+  }
+  return a;
+}
+function heads(trunk) {
+  const hp = new Float32Array(32 * N_ACT);
+  conv1x1(trunk, CH, hp, 32, W["ph.0.weight"].data);
+  groupNorm(hp, 32, W["ph.1.weight"].data, W["ph.1.bias"].data, true);
+  const logits = new Float32Array(N_ACT);
+  linear(hp, 32 * N_ACT, W["ph.4.weight"].data, W["ph.4.bias"].data, N_ACT, logits);
+
+  const hv = new Float32Array(32 * N_ACT);
+  conv1x1(trunk, CH, hv, 32, W["vh.0.weight"].data);
+  groupNorm(hv, 32, W["vh.1.weight"].data, W["vh.1.bias"].data, true);
+  const h128 = new Float32Array(128);
+  linear(hv, 32 * N_ACT, W["vh.4.weight"].data, W["vh.4.bias"].data, 128, h128);
+  for (let i = 0; i < 128; i++) if (h128[i] < 0) h128[i] = 0;
+  const v1 = new Float32Array(1);
+  linear(h128, 128, W["vh.6.weight"].data, W["vh.6.bias"].data, 1, v1);
+  return { logits, value: Math.tanh(v1[0]) };
+}
+
+/* ================= WebGL2 trunk ================= */
+/* Activations live in R32F textures, channels tiled on a grid:
+   192 ch -> 16x12 tiles of BxB, texture 240x180. Input (4 ch) -> 2x2 tiles. */
+const GL = (function initGL() {
+  try {
+    const cv = document.createElement("canvas");
+    const gl = cv.getContext("webgl2", { antialias: false, depth: false });
+    if (!gl) return null;
+    if (!gl.getExtension("EXT_color_buffer_float")) return null;
+    const VS = `#version 300 es
+      void main(){ vec2 p = vec2((gl_VertexID<<1)&2, gl_VertexID&2);
+        gl_Position = vec4(p*2.0-1.0, 0.0, 1.0); }`;
+    function prog(fs) {
+      const compile = (t, s) => {
+        const sh = gl.createShader(t); gl.shaderSource(sh, s); gl.compileShader(sh);
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS))
+          throw new Error(gl.getShaderInfoLog(sh));
+        return sh;
+      };
+      const p = gl.createProgram();
+      gl.attachShader(p, compile(gl.VERTEX_SHADER, VS));
+      gl.attachShader(p, compile(gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS))
+        throw new Error(gl.getProgramInfoLog(p));
+      return p;
+    }
+    const HDR = `#version 300 es
+      precision highp float; precision highp int; precision highp sampler2D;
+      const int B = ${B};
+      out vec4 O;
+      ivec3 tileOf(ivec2 px, int gw) {   // -> (channel, r, c)
+        ivec2 t = px / B, rc = px % B;
+        return ivec3(t.y * gw + t.x, rc.y, rc.x);
+      }
+      ivec2 texOf(int ch, int r, int c, int gw) {
+        return ivec2((ch % gw) * B + c, (ch / gw) * B + r);
+      }`;
+    const pConv3 = prog(HDR + `
+      uniform sampler2D uIn, uW;      // W: x = ic*9+ky*3+kx, y = oc
+      uniform int uCIN, uInGW, uOutGW;
+      void main(){
+        ivec3 t = tileOf(ivec2(gl_FragCoord.xy), uOutGW);
+        int oc = t.x, r = t.y, c = t.z;
+        float acc = 0.0;
+        for (int ic = 0; ic < uCIN; ic++) {
+          for (int ky = 0; ky < 3; ky++) {
+            int rr = r + ky - 1;
+            if (rr < 0 || rr >= B) continue;
+            for (int kx = 0; kx < 3; kx++) {
+              int cc = c + kx - 1;
+              if (cc < 0 || cc >= B) continue;
+              float w = texelFetch(uW, ivec2(ic*9 + ky*3 + kx, oc), 0).r;
+              acc += w * texelFetch(uIn, texOf(ic, rr, cc, uInGW), 0).r;
+            }
+          }
+        }
+        O = vec4(acc, 0.0, 0.0, 1.0);
+      }`);
+    const pStats = prog(HDR + `
+      uniform sampler2D uIn;          // stats per group -> (mean, var) at x=g
+      uniform int uCPG, uInGW;        // channels per group
+      void main(){
+        int g = int(gl_FragCoord.x);
+        // two passes over the group: E[x^2]-E[x]^2 in fp32 collapses when the
+        // activations are near-constant (empty board!), so subtract the mean
+        float s = 0.0;
+        for (int k = 0; k < uCPG; k++) {
+          int ch = g * uCPG + k;
+          for (int r = 0; r < B; r++) for (int c = 0; c < B; c++)
+            s += texelFetch(uIn, texOf(ch, r, c, uInGW), 0).r;
+        }
+        float n = float(uCPG * B * B), m = s / n;
+        float s2 = 0.0;
+        for (int k = 0; k < uCPG; k++) {
+          int ch = g * uCPG + k;
+          for (int r = 0; r < B; r++) for (int c = 0; c < B; c++) {
+            float d = texelFetch(uIn, texOf(ch, r, c, uInGW), 0).r - m;
+            s2 += d * d;
+          }
+        }
+        O = vec4(m, s2 / n, 0.0, 1.0);
+      }`);
+    const pApply = prog(HDR + `
+      uniform sampler2D uIn, uStats, uGB, uRes;  // GB: x=ch -> (gamma, beta)
+      uniform int uCPG, uGW, uRelu, uAddRes;
+      uniform float uEps;
+      void main(){
+        ivec2 px = ivec2(gl_FragCoord.xy);
+        ivec3 t = tileOf(px, uGW);
+        vec2 st = texelFetch(uStats, ivec2(t.x / uCPG, 0), 0).rg;
+        vec2 gb = texelFetch(uGB, ivec2(t.x, 0), 0).rg;
+        float v = (texelFetch(uIn, px, 0).r - st.x) * inversesqrt(st.y + uEps)
+                  * gb.x + gb.y;
+        if (uAddRes == 1) v += texelFetch(uRes, px, 0).r;
+        if (uRelu == 1) v = max(v, 0.0);
+        O = vec4(v, 0.0, 0.0, 1.0);
+      }`);
+
+    const GW = 16, GH = Math.ceil(CH / GW);           // 16 x 12 tile grid
+    const AW = GW * B, AH = GH * B;
+    function tex(w, h, fmt, data) {
+      const t = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      if (fmt === "R32F")
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.R32F, w, h, 0, gl.RED, gl.FLOAT, data || null);
+      else
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RG32F, w, h, 0, gl.RG, gl.FLOAT, data || null);
+      return t;
+    }
+    // static weight/param textures
+    const wTex = {}, gbTex = {}, statsTex = tex(GN_G, 1, "RG32F");
+    function convTexOf(name, cin, cout) {
+      if (!wTex[name]) wTex[name] = tex(cin * 9, cout, "R32F", W[name].data);
+      return wTex[name];
+    }
+    function gbTexOf(wn, bn, cch) {
+      const key = wn;
+      if (!gbTex[key]) {
+        const d = new Float32Array(cch * 2);
+        for (let i = 0; i < cch; i++) { d[2*i] = W[wn].data[i]; d[2*i+1] = W[bn].data[i]; }
+        gbTex[key] = tex(cch, 1, "RG32F", d);
+      }
+      return gbTex[key];
+    }
+    const inTex = tex(2 * B, 2 * B, "R32F");          // 4-channel input, 2x2 grid
+    const act = [tex(AW, AH, "R32F"), tex(AW, AH, "R32F"), tex(AW, AH, "R32F")];
+    const fbo = gl.createFramebuffer();
+    const inBuf = new Float32Array(2 * B * 2 * B);
+    const outBuf = new Float32Array(AW * AH);
+
+    // pre-create every weight/param texture NOW: tex() binds to the currently
+    // active texture unit, so creating one mid-pass (as a lazy cache would)
+    // silently replaces whatever activation texture that unit was sampling --
+    // which is exactly a wrong-first-forward bug
+    convTexOf("stem.0.weight", 4, CH);
+    gbTexOf("stem.1.weight", "stem.1.bias", CH);
+    for (let bl = 0; bl < BLOCKS; bl++) {
+      convTexOf(`body.${bl}.c1.weight`, CH, CH);
+      convTexOf(`body.${bl}.c2.weight`, CH, CH);
+      gbTexOf(`body.${bl}.n1.weight`, `body.${bl}.n1.bias`, CH);
+      gbTexOf(`body.${bl}.n2.weight`, `body.${bl}.n2.bias`, CH);
+    }
+
+    function bindOut(t, w, h) {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+      gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0);
+      gl.viewport(0, 0, w, h);
+    }
+    function setTex(p, name, unit, t) {
+      gl.activeTexture(gl.TEXTURE0 + unit);
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.uniform1i(gl.getUniformLocation(p, name), unit);
+    }
+    function draw() { gl.drawArrays(gl.TRIANGLES, 0, 3); }
+
+    function conv(dst, src, srcGW, cin, wname) {
+      gl.useProgram(pConv3);
+      bindOut(dst, AW, AH);
+      setTex(pConv3, "uIn", 0, src);
+      setTex(pConv3, "uW", 1, convTexOf(wname, cin, CH));
+      gl.uniform1i(gl.getUniformLocation(pConv3, "uCIN"), cin);
+      gl.uniform1i(gl.getUniformLocation(pConv3, "uInGW"), srcGW);
+      gl.uniform1i(gl.getUniformLocation(pConv3, "uOutGW"), GW);
+      draw();
+    }
+    function gn(dst, src, wn, bn, relu, resTex) {
+      gl.useProgram(pStats);
+      bindOut(statsTex, GN_G, 1);
+      setTex(pStats, "uIn", 0, src);
+      gl.uniform1i(gl.getUniformLocation(pStats, "uCPG"), CH / GN_G);
+      gl.uniform1i(gl.getUniformLocation(pStats, "uInGW"), GW);
+      draw();
+      gl.useProgram(pApply);
+      bindOut(dst, AW, AH);
+      setTex(pApply, "uIn", 0, src);
+      setTex(pApply, "uStats", 1, statsTex);
+      setTex(pApply, "uGB", 2, gbTexOf(wn, bn, CH));
+      setTex(pApply, "uRes", 3, resTex || src);
+      gl.uniform1i(gl.getUniformLocation(pApply, "uCPG"), CH / GN_G);
+      gl.uniform1i(gl.getUniformLocation(pApply, "uGW"), GW);
+      gl.uniform1i(gl.getUniformLocation(pApply, "uRelu"), relu ? 1 : 0);
+      gl.uniform1i(gl.getUniformLocation(pApply, "uAddRes"), resTex ? 1 : 0);
+      gl.uniform1f(gl.getUniformLocation(pApply, "uEps"), GN_EPS);
+      draw();
+    }
+
+    function trunk(x4) {
+      // upload 4 input planes into the 2x2 tile texture
+      inBuf.fill(0);
+      for (let ch = 0; ch < 4; ch++) {
+        const tx = (ch % 2) * B, ty = ((ch / 2) | 0) * B;
+        for (let r = 0; r < B; r++) for (let c = 0; c < B; c++)
+          inBuf[(ty + r) * (2 * B) + tx + c] = x4[ch * N_ACT + r * B + c];
+      }
+      gl.bindTexture(gl.TEXTURE_2D, inTex);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, 2 * B, 2 * B, gl.RED, gl.FLOAT, inBuf);
+
+      let X = act[0], T1 = act[1], T2 = act[2];
+      conv(T1, inTex, 2, 4, "stem.0.weight");
+      gn(X, T1, "stem.1.weight", "stem.1.bias", true, null);
+      for (let bl = 0; bl < BLOCKS; bl++) {
+        conv(T1, X, GW, CH, `body.${bl}.c1.weight`);
+        gn(T2, T1, `body.${bl}.n1.weight`, `body.${bl}.n1.bias`, true, null);
+        conv(T1, T2, GW, CH, `body.${bl}.c2.weight`);
+        gn(T2, T1, `body.${bl}.n2.weight`, `body.${bl}.n2.bias`, true, X);
+        const t = X; X = T2; T2 = t;                    // X now holds block output
+      }
+      bindOut(X, AW, AH);                               // read back the trunk
+      gl.readPixels(0, 0, AW, AH, gl.RED, gl.FLOAT, outBuf);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      const out = new Float32Array(CH * N_ACT);
+      for (let ch = 0; ch < CH; ch++) {
+        const tx = (ch % GW) * B, ty = ((ch / GW) | 0) * B;
+        for (let r = 0; r < B; r++) for (let c = 0; c < B; c++)
+          out[ch * N_ACT + r * B + c] = outBuf[(ty + r) * AW + tx + c];
+      }
+      return out;
+    }
+    return { trunk };
+  } catch (e) {
+    console.warn("WebGL2 init failed:", e);
+    return null;
+  }
+})();
+
+/* ================= forward ================= */
+const encBuf = new Float32Array(4 * N_ACT);
+let ENGINE = GL ? "webgl2" : "cpu";
+function forward(state) {
+  state.encode(encBuf);
+  const trunk = ENGINE === "webgl2" ? GL.trunk(encBuf) : cpuTrunk(encBuf);
+  const { logits, value } = heads(trunk);
+  // legal-masked softmax
+  const p = new Float32Array(N_ACT);
+  let mx = -Infinity;
+  for (let i = 0; i < N_ACT; i++) if (state.board[i] === 0 && logits[i] > mx) mx = logits[i];
+  let s = 0;
+  for (let i = 0; i < N_ACT; i++) {
+    if (state.board[i] === 0) { p[i] = Math.exp(logits[i] - mx); s += p[i]; }
+  }
+  for (let i = 0; i < N_ACT; i++) p[i] /= s;
+  return { p, v: value };
+}
+
+/* ================= MCTS (mirrors the trainer's Tree) ================= */
+class Node {
+  constructor(state) {
+    this.state = state; this.P = null; this.N = null; this.W = null;
+    this.children = new Map(); this.expanded = false;
+  }
+}
+class Tree {
+  constructor(state) { this.root = new Node(state.clone()); }
+  select() {
+    let node = this.root; const path = [];
+    for (;;) {
+      const st = node.state;
+      if (st.done) return { path, node, tv: st.terminalValue() };
+      if (!node.expanded) return { path, node, tv: null };
+      const { N, W: Wn, P } = node;
+      let sumN = 0;
+      for (let i = 0; i < N_ACT; i++) sumN += N[i];
+      const k = C_PUCT * Math.sqrt(sumN + 1);
+      let best = -Infinity, a = -1;
+      for (let i = 0; i < N_ACT; i++) {
+        if (st.board[i] !== 0) continue;
+        const q = N[i] > 0 ? Wn[i] / N[i] : 0;
+        const sc = q + k * P[i] / (1 + N[i]);
+        if (sc > best) { best = sc; a = i; }
+      }
+      path.push([node, a]);
+      let child = node.children.get(a);
+      if (child === undefined) {
+        const ns = st.clone(); ns.play(a);
+        child = new Node(ns);
+        node.children.set(a, child);
+      }
+      node = child;
+    }
+  }
+  expand(node, probs) {
+    const p = new Float32Array(N_ACT);
+    let s = 0;
+    for (let i = 0; i < N_ACT; i++) if (node.state.board[i] === 0) { p[i] = probs[i]; s += p[i]; }
+    if (s > 1e-12) for (let i = 0; i < N_ACT; i++) p[i] /= s;
+    else {
+      let nl = 0;
+      for (let i = 0; i < N_ACT; i++) if (node.state.board[i] === 0) nl++;
+      for (let i = 0; i < N_ACT; i++) p[i] = node.state.board[i] === 0 ? 1 / nl : 0;
+    }
+    node.P = p;
+    node.N = new Float32Array(N_ACT);
+    node.W = new Float32Array(N_ACT);
+    node.expanded = true;
+  }
+  static backup(path, leafValue) {
+    let v = leafValue;
+    for (let i = path.length - 1; i >= 0; i--) {
+      v = -v;
+      const [node, a] = path[i];
+      node.N[a] += 1; node.W[a] += v;
+    }
+  }
+  advance(a) {
+    const child = this.root.children.get(a);
+    if (child !== undefined) this.root = child;
+    else { const ns = this.root.state.clone(); ns.play(a); this.root = new Node(ns); }
+  }
+}
+
+async function aiMove(tree, sims, onProgress) {
+  if (sims === 0) {           // raw policy: one forward, argmax of the prior
+    const { p, v } = forward(tree.root.state);
+    if (!tree.root.expanded) tree.expand(tree.root, p);
+    let a = -1, best = -1;
+    for (let i = 0; i < N_ACT; i++)
+      if (tree.root.state.board[i] === 0 && p[i] > best) { best = p[i]; a = i; }
+    return { a, visits: null, v };
+  }
+  if (!tree.root.expanded) {
+    const { p } = forward(tree.root.state);
+    tree.expand(tree.root, p);
+  }
+  const t0 = performance.now();
+  for (let s = 0; s < sims; s++) {
+    const { path, node, tv } = tree.select();
+    if (tv !== null) Tree.backup(path, tv);
+    else {
+      const { p, v } = forward(node.state);
+      tree.expand(node, p);
+      Tree.backup(path, v);
+    }
+    if ((s & 15) === 15) {
+      onProgress && onProgress(s + 1, sims);
+      await new Promise(r => setTimeout(r, 0));
+      if (performance.now() - t0 > 45000) break;   // hard cap: stay responsive
+    }
+  }
+  const N = tree.root.N;
+  let a = -1, best = -1, sumN = 0, q = 0;
+  for (let i = 0; i < N_ACT; i++) {
+    sumN += N[i];
+    if (N[i] > best) { best = N[i]; a = i; }
+  }
+  // backup flips the sign at every level, so root W/N is already from the
+  // root mover's (the AI's) point of view
+  if (a >= 0 && N[a] > 0) q = tree.root.W[a] / N[a];
+  return { a, visits: Float32Array.from(N), v: q, sumN };
+}
+
+/* ================= engine self-test ================= */
+async function selfTest() {
+  const results = [];
+  for (const vec of TESTVEC.vectors) {
+    const s = new State();
+    for (const a of vec.moves) s.play(a);
+    const { p, v } = forward(s);
+    let maxd = 0, am = 0, bestp = -1;
+    for (let i = 0; i < N_ACT; i++) {
+      const d = Math.abs(p[i] - vec.policy[i]);
+      if (d > maxd) maxd = d;
+      if (p[i] > bestp) { bestp = p[i]; am = i; }
+    }
+    results.push({ name: vec.name, maxDeltaPolicy: maxd,
+                   deltaValue: Math.abs(v - vec.value),
+                   argmaxOK: am === vec.argmax });
+    await new Promise(r => setTimeout(r, 0));
+  }
+  return results;
+}
+
+/* ================= UI ================= */
+const cvs = document.getElementById("bd"), ctx = cvs.getContext("2d");
+const statusEl = document.getElementById("status");
+const movesEl = document.getElementById("moves");
+const progEl = document.getElementById("prog"), progFill = progEl.querySelector("i");
+const vfill = document.getElementById("vfill"), vtxt = document.getElementById("vtxt");
+const btnNew = document.getElementById("btnNew"), btnUndo = document.getElementById("btnUndo"),
+      btnHeat = document.getElementById("btnHeat");
+const COLS = "ABCDEFGHJKLMNOPQ";        // no I, go/gomoku convention
+
+let game = null;   // {state, moves[], humanSide, tree, over, winCells, heat, lastAIV}
+let thinking = false, showHeat = false, hoverCell = -1;
+
+function humanSide() { return +document.querySelector("#segSide .on").dataset.v; }
+function level() { return +document.querySelector("#segLevel .on").dataset.v; }
+for (const seg of ["segSide", "segLevel"]) {
+  document.getElementById(seg).addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (seg === "segSide") {
+      // side is a new-game setting: mid-game clicks would desync the picker
+      // from the actual assignment, so ignore them until the game ends
+      if (thinking || (game && game.moves.length > 0 && !game.over)) return;
+    }
+    b.parentElement.querySelectorAll("button").forEach(x => x.classList.toggle("on", x === b));
+    if (seg === "segSide" && game && game.moves.length === 0) startGame();
+  });
+}
+
+function coordName(a) {
+  const r = (a / B) | 0, c = a % B;
+  return COLS[c] + (B - r);
+}
+
+function newGame() {
+  game = { state: new State(), moves: [], humanSide: humanSide(),
+           tree: null, over: false, winCells: null, heat: null, lastAIV: null };
+  game.tree = new Tree(game.state);
+  thinking = false; showHeat = false;
+  btnHeat.textContent = "AI 视角";
+  statusEl.style.color = "";
+  setV(null);
+  render(); renderMoves(); updateButtons();
+  if (game.state.toPlay !== game.humanSide) setTimeout(aiTurn, 60);
+  else setStatus("轮到你落子。");
+}
+function startGame() { newGame(); }
+
+function setStatus(t, html) {
+  statusEl.textContent = "";
+  if (html) statusEl.appendChild(html);
+  else statusEl.textContent = t;
+}
+function setV(vBlack) {
+  if (vBlack === null) { vfill.style.width = "50%"; vtxt.textContent = "—"; return; }
+  const pWin = (vBlack + 1) / 2;
+  vfill.style.width = (pWin * 100).toFixed(1) + "%";
+  vtxt.textContent = (pWin * 100).toFixed(0) + "%";
+}
+function updateButtons() {
+  btnUndo.disabled = thinking || !game || game.moves.length === 0;
+  btnHeat.disabled = !game || !game.heat;
+}
+
+async function aiTurn() {
+  if (!game || game.over || thinking) return;
+  if (game.state.toPlay === game.humanSide) return;   // not the AI's turn
+  thinking = true; cvs.classList.add("busy");
+  updateButtons();
+  const sims = level();
+  setStatus(sims ? `AI 思考中（${sims} 次模拟）…` : "AI 思考中…");
+  progEl.style.visibility = sims ? "visible" : "hidden";
+  progFill.style.width = "0%";
+  await new Promise(r => setTimeout(r, 30));   // let the UI paint
+  try {
+    const t0 = performance.now();
+    const { a, visits, v } = await aiMove(game.tree, sims, (done, total) => {
+      progFill.style.width = (100 * done / total).toFixed(1) + "%";
+    });
+    const dt = ((performance.now() - t0) / 1000).toFixed(1);
+    game.heat = visits;
+    // v is from the AI (mover at root) POV; convert to black POV for the bar
+    const aiIsBlack = game.state.toPlay === 1;
+    game.lastAIV = aiIsBlack ? v : -v;
+    setV(game.lastAIV);
+    applyMove(a);
+    if (!game.over)
+      setStatus(`AI 落子 ${coordName(a)}（${dt}s）。轮到你。`);
+  } catch (e) {
+    // a lost WebGL context (or any engine failure) must not freeze the game
+    console.error(e);
+    setStatus("引擎异常：" + (e.message || e) + " —— 请刷新页面重试。");
+    statusEl.style.color = "var(--bad-text)";
+  } finally {
+    progEl.style.visibility = "hidden";
+    thinking = false; cvs.classList.remove("busy");
+    updateButtons();
+  }
+}
+
+function applyMove(a) {
+  game.state.play(a);
+  game.moves.push(a);
+  game.tree.advance(a);
+  if (game.state.done) {
+    game.over = true;
+    if (game.state.winner !== 0) {
+      const r = (a / B) | 0, c = a % B;
+      game.winCells = winLine(game.state.board, r, c, game.state.winner);
+      const youWin = game.state.winner === game.humanSide;
+      setStatus("", Object.assign(document.createElement("b"), {
+        textContent: youWin ? "你赢了！" : "AI 获胜。",
+      }));
+      statusEl.style.color = youWin ? "var(--good-text)" : "var(--bad-text)";
+    } else setStatus("平局（棋盘下满）。");
+  } else statusEl.style.color = "";
+  render(); renderMoves(); updateButtons();
+}
+
+cvs.addEventListener("click", e => {
+  if (!game || game.over || thinking) return;
+  if (game.state.toPlay !== game.humanSide) return;
+  const a = cellAt(e);
+  if (a < 0 || game.state.board[a] !== 0) return;
+  game.heat = null; showHeat = false; btnHeat.textContent = "AI 视角";
+  applyMove(a);
+  if (!game.over) aiTurn();
+});
+cvs.addEventListener("mousemove", e => {
+  const a = cellAt(e);
+  if (a !== hoverCell) { hoverCell = a; render(); }
+});
+cvs.addEventListener("mouseleave", () => { hoverCell = -1; render(); });
+
+btnNew.addEventListener("click", () => { if (!thinking) newGame(); });
+btnUndo.addEventListener("click", () => {
+  if (thinking || !game || game.moves.length === 0) return;
+  // undo back to the human's previous turn: drop trailing AI move + human move
+  let k = game.moves.length;
+  if (game.state.toPlay === game.humanSide || game.over) k -= 1;  // AI moved last
+  k -= 1;
+  const keep = game.moves.slice(0, Math.max(0, k));
+  const hs = game.humanSide;
+  game = { state: new State(), moves: [], humanSide: hs, tree: null,
+           over: false, winCells: null, heat: null, lastAIV: null };
+  for (const a of keep) { game.state.play(a); game.moves.push(a); }
+  game.tree = new Tree(game.state);
+  statusEl.style.color = "";
+  setV(null);
+  render(); renderMoves(); updateButtons();
+  // undoing as white can rewind to an AI-to-move position (even the empty
+  // board); nothing else re-triggers the AI, so do it here
+  if (game.state.toPlay !== game.humanSide) { setStatus("已悔棋。"); setTimeout(aiTurn, 60); }
+  else setStatus("已悔棋，轮到你。");
+});
+btnHeat.addEventListener("click", () => {
+  showHeat = !showHeat;
+  btnHeat.textContent = showHeat ? "隐藏 AI 视角" : "AI 视角";
+  render();
+});
+
+/* board drawing */
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+function boardMetrics() {
+  const css = cvs.clientWidth || 640;
+  const pad = css * 0.045, cell = (css - 2 * pad) / (B - 1);
+  return { css, pad, cell };
+}
+function cellAt(e) {
+  const rect = cvs.getBoundingClientRect();
+  const { pad, cell } = boardMetrics();
+  const x = e.clientX - rect.left, y = e.clientY - rect.top;
+  const c = Math.round((x - pad) / cell), r = Math.round((y - pad) / cell);
+  if (r < 0 || r >= B || c < 0 || c >= B) return -1;
+  const dx = x - (pad + c * cell), dy = y - (pad + r * cell);
+  if (dx * dx + dy * dy > cell * cell * 0.45) return -1;
+  return r * B + c;
+}
+function css(v) { return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+function render() {
+  const { css: size, pad, cell } = boardMetrics();
+  if (cvs.width !== Math.round(size * DPR)) {
+    cvs.width = Math.round(size * DPR); cvs.height = Math.round(size * DPR);
+  }
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  ctx.fillStyle = css("--board");
+  ctx.beginPath(); ctx.roundRect(0, 0, size, size, 8); ctx.fill();
+  ctx.strokeStyle = css("--board-line");
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < B; i++) {
+    ctx.moveTo(pad, pad + i * cell); ctx.lineTo(size - pad, pad + i * cell);
+    ctx.moveTo(pad + i * cell, pad); ctx.lineTo(pad + i * cell, size - pad);
+  }
+  ctx.stroke();
+  ctx.fillStyle = css("--board-line");
+  for (const [r, c] of [[3,3],[3,11],[7,7],[11,3],[11,11]]) {
+    ctx.beginPath(); ctx.arc(pad + c * cell, pad + r * cell, 2.4, 0, 7); ctx.fill();
+  }
+  ctx.fillStyle = css("--board-line");
+  ctx.font = `${Math.max(9, cell * 0.32)}px ui-monospace, Menlo, monospace`;
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  for (let c = 0; c < B; c++) ctx.fillText(COLS[c], pad + c * cell, pad * 0.42);
+  for (let r = 0; r < B; r++) {
+    ctx.textAlign = "right";
+    ctx.fillText(String(B - r), pad * 0.6, pad + r * cell);
+  }
+  ctx.textAlign = "center";
+
+  if (!game) return;
+  // heatmap of AI root visits
+  if (showHeat && game.heat) {
+    let mx = 0;
+    for (let i = 0; i < N_ACT; i++) if (game.heat[i] > mx) mx = game.heat[i];
+    if (mx > 0) {
+      for (let i = 0; i < N_ACT; i++) {
+        const h = game.heat[i];
+        if (h <= 0 || game.state.board[i] !== 0) continue;
+        const r = (i / B) | 0, c = i % B, al = 0.12 + 0.55 * (h / mx);
+        ctx.fillStyle = css("--heat");
+        ctx.globalAlpha = al;
+        ctx.beginPath();
+        ctx.roundRect(pad + c * cell - cell * 0.38, pad + r * cell - cell * 0.38,
+                      cell * 0.76, cell * 0.76, 4);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
+  // stones
+  for (let i = 0; i < N_ACT; i++) {
+    const v = game.state.board[i];
+    if (v === 0) continue;
+    drawStone(i, v, pad, cell, false);
+  }
+  // hover ghost
+  if (hoverCell >= 0 && !game.over && !thinking &&
+      game.state.toPlay === game.humanSide && game.state.board[hoverCell] === 0) {
+    ctx.globalAlpha = 0.45;
+    drawStone(hoverCell, game.humanSide, pad, cell, false);
+    ctx.globalAlpha = 1;
+  }
+  // last-move marker + win line
+  const last = game.moves[game.moves.length - 1];
+  if (last !== undefined) {
+    const r = (last / B) | 0, c = last % B;
+    ctx.strokeStyle = css("--s2");
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(pad + c * cell, pad + r * cell, cell * 0.18, 0, 7);
+    ctx.stroke();
+  }
+  if (game.winCells) {
+    ctx.strokeStyle = css("--s2");
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    const f = game.winCells[0], l = game.winCells[game.winCells.length - 1];
+    ctx.beginPath();
+    ctx.moveTo(pad + (f % B) * cell, pad + ((f / B) | 0) * cell);
+    ctx.lineTo(pad + (l % B) * cell, pad + ((l / B) | 0) * cell);
+    ctx.stroke();
+  }
+}
+function drawStone(i, v, pad, cell, flat) {
+  const r = (i / B) | 0, c = i % B;
+  const x = pad + c * cell, y = pad + r * cell, rad = cell * 0.44;
+  const g = ctx.createRadialGradient(x - rad * 0.3, y - rad * 0.35, rad * 0.15, x, y, rad);
+  if (v === 1) { g.addColorStop(0, "#3c3c44"); g.addColorStop(1, css("--stone-b")); }
+  else { g.addColorStop(0, "#ffffff"); g.addColorStop(1, css("--stone-w")); }
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(x, y, rad, 0, 7); ctx.fill();
+  ctx.strokeStyle = v === 1 ? "rgba(0,0,0,.5)" : "rgba(0,0,0,.28)";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+}
+function renderMoves() {
+  if (!game) { movesEl.textContent = ""; return; }
+  movesEl.textContent = game.moves.map((a, i) =>
+    `${String(i + 1).padStart(3)}. ${i % 2 === 0 ? "●" : "○"} ${coordName(a)}`).join("\n") || "（尚无落子）";
+  movesEl.scrollTop = movesEl.scrollHeight;
+}
+
+/* theme toggle (same 3-state cycle as the reports) */
+(function themeInit() {
+  const btn = document.getElementById("themeBtn");
+  const LAB = { "": "主题：跟随系统", light: "主题：浅色", dark: "主题：深色" };
+  let cur = "";
+  btn.addEventListener("click", () => {
+    cur = cur === "" ? "light" : cur === "light" ? "dark" : "";
+    if (cur) document.documentElement.setAttribute("data-theme", cur);
+    else document.documentElement.removeAttribute("data-theme");
+    btn.textContent = LAB[cur];
+    render();
+  });
+})();
+window.addEventListener("resize", () => render());
+
+/* chips + boot */
+(function boot() {
+  const chips = document.getElementById("chips");
+  const add = (t, cls) => {
+    const c = document.createElement("span");
+    c.className = "chip" + (cls ? " " + cls : "");
+    c.textContent = t; chips.appendChild(c); return c;
+  };
+  add(`${B}×${B} 五子棋（无禁手）`);
+  add(`模型 ${MANIFEST.ckpt} · ${(MANIFEST.bytes / 2 / 1e6).toFixed(1)}M 参数 fp16`);
+  add(`推理引擎：${ENGINE === "webgl2" ? "WebGL2" : "CPU（较慢，建议原始策略档）"}`);
+  const tchip = add("引擎校验中…");
+  document.getElementById("engNote").textContent =
+    "「AI 视角」显示上一手 AI 搜索的访问热度。价值条是模型价值头对当前局面的判断，不是理论最优。";
+  document.getElementById("foot").textContent =
+    `模型来自 node09 8×H20 上的 AlphaZero 自我对弈训练（40 轮 / 约 10.7 小时 / 终局循环赛 Elo +1,639）。` +
+    `本页零依赖、可离线打开；权重 fp16 内嵌，推理与搜索全部在本地浏览器完成。`;
+
+  selfTest().then(rs => {
+    const bad = rs.filter(r => !r.argmaxOK || r.maxDeltaPolicy > 5e-3 || r.deltaValue > 2e-2);
+    const mx = Math.max(...rs.map(r => r.maxDeltaPolicy));
+    window.__ENGINE_TEST = rs;
+    if (bad.length) {
+      tchip.textContent = `引擎校验失败（${bad.map(b => b.name).join(",")}）`;
+      tchip.className = "chip err";
+      if (ENGINE === "webgl2") {
+        ENGINE = "cpu";
+        add("已回退 CPU 引擎", "err");
+      }
+    } else {
+      tchip.textContent = `引擎校验 ✓ 与训练端一致（maxΔ ${mx.toExponential(1)}）`;
+      tchip.className = "chip ok";
+    }
+    newGame();
+  }).catch(e => {
+    tchip.textContent = "引擎校验异常：" + e.message;
+    tchip.className = "chip err";
+    window.__ENGINE_TEST = { error: String(e) };
+    newGame();
+  });
+})();
+
+/* test hooks for headless verification */
+window.__PLAY = {
+  humanMove(a) { if (game && !game.over && game.state.toPlay === game.humanSide
+                     && game.state.board[a] === 0) { applyMove(a); return true; } return false; },
+  aiTurn, state: () => game, forward, State, Tree, aiMove,
+  cpuTrunk, glTrunk: GL ? GL.trunk : null, heads, encBuf, selfTest,
+};
+</script>
+</body>
+</html>

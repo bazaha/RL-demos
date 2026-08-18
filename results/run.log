@@ -1,0 +1,84 @@
+
+=============
+== PyTorch ==
+=============
+
+NVIDIA Release 24.08 (build 107063150)
+PyTorch Version 2.5.0a0+872d972
+Container image Copyright (c) 2024, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+Copyright (c) 2014-2024 Facebook Inc.
+Copyright (c) 2011-2014 Idiap Research Institute (Ronan Collobert)
+Copyright (c) 2012-2014 Deepmind Technologies    (Koray Kavukcuoglu)
+Copyright (c) 2011-2012 NEC Laboratories America (Koray Kavukcuoglu)
+Copyright (c) 2011-2013 NYU                      (Clement Farabet)
+Copyright (c) 2006-2010 NEC Laboratories America (Ronan Collobert, Leon Bottou, Iain Melvin, Jason Weston)
+Copyright (c) 2006      Idiap Research Institute (Samy Bengio)
+Copyright (c) 2001-2004 Idiap Research Institute (Ronan Collobert, Samy Bengio, Johnny Mariethoz)
+Copyright (c) 2015      Google Inc.
+Copyright (c) 2015      Yangqing Jia
+Copyright (c) 2013-2016 The Caffe contributors
+All rights reserved.
+
+Various files include modifications (c) NVIDIA CORPORATION & AFFILIATES.  All rights reserved.
+
+This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+By pulling and using the container, you accept the terms and conditions of this license:
+https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+
+NOTE: CUDA Forward Compatibility mode ENABLED.
+  Using CUDA 12.6 driver version 560.35.03 with kernel driver version 535.161.07.
+  See https://docs.nvidia.com/deploy/cuda-compatibility/ for details.
+
+=== env check ===
+torch 2.5.0a0+872d972e41.nv24.08 | cuda 12.6 | gpus 1 NVIDIA H20
+torchvision 0.20.0a0 | gymnasium 1.2.2
+=== prep CIFAR-10 ===
+train (50000, 32, 32, 3) test (10000, 32, 32, 3)
+saved data/cifar10.npz
+=== DL training: ResNet-18 / CIFAR-10 ===
+gpu monitor started (pid 669)
+epoch 1/5 loss=2.0016 acc=0.4348 15193 img/s (3.3s)
+epoch 2/5 loss=1.4611 acc=0.6011 21429 img/s (2.3s)
+epoch 3/5 loss=1.1671 acc=0.6986 21509 img/s (2.3s)
+epoch 4/5 loss=1.0022 acc=0.7757 21523 img/s (2.3s)
+epoch 5/5 loss=0.8996 acc=0.8314 21464 img/s (2.3s)
+wrote results/dl_metrics.json
+gpu monitor stopped; 18 samples in results/gpu_log.csv
+=== RL training: DQN / CartPole-v1 ===
+gpu monitor started (pid 1718)
+  [traj @ep1] greedy reward=10.0
+ep 20/400 reward=29 avg100=25.6 eps=0.939
+ep 40/400 reward=24 avg100=25.2 eps=0.884
+  [traj @ep50] greedy reward=9.0
+ep 60/400 reward=23 avg100=23.9 eps=0.839
+ep 80/400 reward=17 avg100=22.9 eps=0.799
+  [traj @ep100] greedy reward=48.0
+ep 100/400 reward=17 avg100=22.6 eps=0.759
+ep 120/400 reward=13 avg100=22.9 eps=0.710
+ep 140/400 reward=25 avg100=23.5 eps=0.664
+ep 160/400 reward=48 avg100=26.5 eps=0.609
+ep 180/400 reward=17 avg100=30.5 eps=0.552
+  [traj @ep200] greedy reward=120.0
+ep 200/400 reward=84 avg100=38.7 eps=0.476
+ep 220/400 reward=23 avg100=44.4 eps=0.416
+ep 240/400 reward=23 avg100=48.7 eps=0.371
+ep 260/400 reward=92 avg100=51.2 eps=0.330
+ep 280/400 reward=20 avg100=54.0 eps=0.291
+  [traj @ep300] greedy reward=179.0
+ep 300/400 reward=111 avg100=54.6 eps=0.250
+ep 320/400 reward=117 avg100=67.8 eps=0.190
+ep 340/400 reward=17 avg100=86.8 eps=0.138
+ep 360/400 reward=59 avg100=116.6 eps=0.092
+ep 380/400 reward=500 avg100=163.7 eps=0.055
+  [traj @ep400] greedy reward=295.0
+ep 400/400 reward=154 avg100=217.4 eps=0.035
+wrote results/rl_metrics.json; solved_at=None final_avg100=217.4
+gpu monitor stopped; 48 samples in results/gpu_log.csv
+=== done ===
+total 68
+drwxrwxr-x 2 10028 10028  4096 Jul 24 04:01 .
+drwxrwxr-x 5 10028 10028  4096 Jul 24 04:00 ..
+-rw-r--r-- 1 root  root   3003 Jul 24 04:00 dl_metrics.json
+-rw-r--r-- 1 root  root    533 Jul 24 04:00 gpu_log_dl.csv
+-rw-r--r-- 1 root  root   1406 Jul 24 04:01 gpu_log_rl.csv
+-rw-r--r-- 1 root  root  46543 Jul 24 04:01 rl_metrics.json

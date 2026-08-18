@@ -1,0 +1,1945 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>node09 · AlphaZero 五子棋训练报告</title>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb; --page: #f9f9f7; --surface-2: #f2f1ec;
+    --text-1: #0b0b0b; --text-2: #52514e; --muted: #898781;
+    --grid: #e1e0d9; --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #8a63d2;
+    --good-text: #006300; --good: #0ca30c; --bad-text: #b3261e;
+    --deemph: #c3c2b7;
+    --board: #e8d9b5; --board-line: #a08b62;
+    --stone-b: #17171a; --stone-w: #fbfbfa;
+    --heat: #2a78d6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --surface-1: #1a1a19; --page: #0d0d0d; --surface-2: #222220;
+      --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+      --grid: #2c2c2a; --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9a76dd;
+      --good-text: #0ca30c; --bad-text: #e8695f;
+      --deemph: #52514e;
+      --board: #4a4130; --board-line: #7d6d4d;
+      --stone-b: #0a0a0c; --stone-w: #f4f3ef;
+      --heat: #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19; --page: #0d0d0d; --surface-2: #222220;
+    --text-1: #ffffff; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #9a76dd;
+    --good-text: #0ca30c; --bad-text: #e8695f;
+    --deemph: #52514e;
+    --board: #4a4130; --board-line: #7d6d4d;
+    --stone-b: #0a0a0c; --stone-w: #f4f3ef;
+    --heat: #3987e5;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page); color: var(--text-1);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 28px 20px 64px; }
+  header.rpt { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 6px; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 4px; }
+  .sub { color: var(--text-2); font-size: 13px; max-width: 76ch; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 22px; }
+  .chip { font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 999px; padding: 3px 10px; }
+  .theme-btn { flex: none; font: inherit; font-size: 12px; color: var(--text-2); background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; cursor: pointer; }
+  h2 { font-size: 16px; font-weight: 650; margin: 34px 0 4px; }
+  h2 .tag { font-size: 11px; font-weight: 500; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; vertical-align: 2px; margin-left: 8px; }
+  h3 { font-size: 13.5px; font-weight: 620; margin: 20px 0 6px; color: var(--text-1); }
+  h3 .tag { font-size: 11px; font-weight: 500; color: var(--text-2); border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px; vertical-align: 1px; margin-left: 6px; }
+  .lede { color: var(--text-2); font-size: 13px; margin: 0 0 14px; max-width: 76ch; }
+  .lede b { color: var(--text-1); font-weight: 600; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 0 0 8px; }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .tile .lbl { font-size: 12px; color: var(--text-2); }
+  .tile .val { font-size: 25px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .tile .val small { font-size: 13px; font-weight: 500; color: var(--text-2); margin-left: 2px; }
+  .tile .delta { font-size: 12px; margin-top: 2px; color: var(--text-2); }
+  .tile .delta.up { color: var(--good-text); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  @media (max-width: 900px) { .grid2, .grid3 { grid-template-columns: 1fr; } }
+
+  figure.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; margin: 0; padding: 14px 14px 10px; position: relative; }
+  figure.card figcaption { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+  .fig-title { font-size: 13px; font-weight: 600; }
+  .fig-note { font-size: 11.5px; color: var(--muted); }
+  .fig-actions { display: flex; gap: 6px; }
+  .tbl-btn { font: inherit; font-size: 11px; color: var(--text-2); background: none; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; cursor: pointer; }
+  .tbl-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--axis); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--text-2); margin: 2px 0 4px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .key i { width: 14px; height: 0; border-top: 2.5px solid; border-radius: 2px; }
+  .chart-box { position: relative; }
+  .chart-box svg { display: block; width: 100%; height: auto; }
+  .tip { position: absolute; pointer-events: none; background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,.12); padding: 7px 10px; font-size: 12px; display: none; min-width: 110px; z-index: 5; }
+  .tip .tx { color: var(--muted); font-size: 11px; margin-bottom: 3px; }
+  .tip .row { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+  .tip .row i { width: 10px; height: 0; border-top: 2.5px solid; border-radius: 2px; flex: none; }
+  .tip .row b { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .tip .row span { color: var(--text-2); }
+  .dtable { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 4px; display: none; }
+  .dtable th, .dtable td { text-align: right; padding: 3px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  .dtable th { color: var(--text-2); font-weight: 500; }
+  .dtable th:first-child, .dtable td:first-child { text-align: left; }
+  figure.card.show-table .dtable { display: table; }
+  figure.card.show-table .chart-box { display: none; }
+  figure.card.show-table .legend { display: none; }
+
+  table.check { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  table.check th, table.check td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--grid); }
+  table.check th { font-size: 12px; color: var(--text-2); font-weight: 500; }
+  table.check tr:last-child td { border-bottom: none; }
+  table.check td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .ok { color: var(--good-text); font-weight: 600; }
+  .no { color: var(--bad-text); font-weight: 600; }
+  /* a number that is inside its own error bar: keep it readable, but do not
+     let green/red imply a direction the data does not support */
+  .wk { color: var(--text-2); }
+  .mono { font-variant-numeric: tabular-nums; }
+
+  /* board replay */
+  .bd-wrap { display: grid; grid-template-columns: minmax(0,1fr) 250px; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .bd-wrap { grid-template-columns: 1fr; } }
+  .bd-left { max-width: 440px; }
+  canvas.board { width: 100%; height: auto; display: block; border-radius: 8px; }
+  .ctl { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  .ctl-btn { font: inherit; font-size: 12px; background: none; color: var(--text-2); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; cursor: pointer; }
+  .ctl-btn[aria-pressed="true"] { color: var(--text-1); border-color: var(--s1); box-shadow: inset 0 0 0 1px var(--s1); }
+  .ctl-btn:disabled { opacity: .45; cursor: default; }
+  .side { font-size: 12.5px; color: var(--text-2); }
+  .side dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0 0 12px; }
+  .side dt { color: var(--muted); }
+  .side dd { margin: 0; color: var(--text-1); font-variant-numeric: tabular-nums; }
+  .slider { width: 100%; margin: 8px 0 2px; accent-color: var(--s1); }
+  .stone-legend { display: flex; gap: 14px; font-size: 12px; color: var(--text-2); margin-top: 6px; }
+  .stone-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; vertical-align: -1px; margin-right: 5px; border: 1px solid var(--border); }
+
+  .probe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+  .probe-desc { font-size: 12px; color: var(--text-2); margin: 6px 0 0; min-height: 2.6em; }
+  .probe-verdict { font-size: 12px; margin-top: 4px; }
+  .probe-verdict.alt { color: var(--text-2); margin-top: 2px; }
+  footer { margin-top: 40px; color: var(--muted); font-size: 12px; max-width: 80ch; }
+  .note-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 12.5px; color: var(--text-2); margin: 12px 0 0; }
+  .note-box b { color: var(--text-1); }
+  figure.card > p.card-note { font-size: 11.5px; line-height: 1.45; color: var(--muted); margin: 8px 0 2px; }
+  figure.card.show-table > p.card-note { display: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="rpt">
+    <div>
+      <h1>node09 · AlphaZero 五子棋（Gomoku）从零自我对弈训练</h1>
+      <div class="sub" id="subLede"></div>
+    </div>
+    <button class="theme-btn" id="themeBtn" type="button">主题：跟随系统</button>
+  </header>
+  <div class="chips" id="chips"></div>
+
+  <div class="tiles" id="tiles"></div>
+
+  <h2>结论</h2>
+  <p class="lede" id="verdictLede"></p>
+  <table class="check" id="checklist"></table>
+
+  <h2>棋局回放 <span class="tag">训练不同阶段的真实对局</span></h2>
+  <p class="lede">直接看棋是判断"到底学到了什么"最直观的方式。下面是训练过程中留存的真实对局：早期几乎是随机乱下、经常下满棋盘也连不成五；随着训练推进，开始出现抢占中心、连三连四、以及对对手威胁的封堵。</p>
+  <figure class="card">
+    <div class="ctl" id="bdArmBtns"></div>
+    <div class="ctl" id="bdGameBtns"></div>
+    <div class="bd-wrap">
+      <div class="bd-left">
+        <canvas class="board" id="bdCanvas" width="620" height="620"></canvas>
+        <input type="range" class="slider" id="bdSlider" min="0" max="1" value="0">
+        <div class="ctl">
+          <button class="ctl-btn" id="bdPlay" type="button">▶ 播放</button>
+          <button class="ctl-btn" id="bdPrev" type="button">◀ 上一手</button>
+          <button class="ctl-btn" id="bdNext" type="button">下一手 ▶</button>
+          <button class="ctl-btn" id="bdEnd" type="button">⇥ 终局</button>
+        </div>
+      </div>
+      <div class="side">
+        <dl id="bdMeta"></dl>
+        <div class="stone-legend">
+          <span><i style="background:var(--stone-b)"></i>黑（先手）</span>
+          <span><i style="background:var(--stone-w)"></i>白（后手）</span>
+        </div>
+        <p class="probe-desc" id="bdHint"></p>
+      </div>
+    </div>
+  </figure>
+
+  <h2>训练曲线 <span class="tag">两条臂并列</span></h2>
+  <p class="lede" id="curveLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-loss"></figure>
+    <figure class="card" id="c-vloss"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-ent"></figure>
+    <figure class="card" id="c-ev"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-len"></figure>
+    <figure class="card" id="c-draw"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-beta"></figure>
+    <figure class="card" id="c-lr"></figure>
+  </div>
+
+  <h2>棋力评估 <span class="tag">对固定基线的胜率</span></h2>
+  <p class="lede" id="evalLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-wr-mcts"></figure>
+    <figure class="card" id="c-wr-rule"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-elo"></figure>
+    <figure class="card" id="c-tac"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-anchor"></figure>
+    <figure class="card" id="c-tac-tier"></figure>
+  </div>
+  <div class="note-box" id="baselineNote"></div>
+
+  <section id="abSection">
+    <h2>训练效率对比 <span class="tag">规则冷启动到底有没有用</span></h2>
+    <p class="lede" id="abLede"></p>
+
+    <div id="h2hBlock">
+      <h3 class="sub-h">① 两条臂直接对局 <span class="tag">不会饱和的那把尺子</span></h3>
+      <p class="lede" id="h2hLede"></p>
+      <div class="grid2">
+        <figure class="card" id="c-h2h"></figure>
+        <figure class="card" id="c-h2h-elo"></figure>
+      </div>
+      <div style="height:12px"></div>
+      <table class="check" id="h2hTable"></table>
+      <div class="note-box" id="h2hNote"></div>
+    </div>
+
+    <h3 class="sub-h" id="abScoreH">② 对固定基线的综合棋力分 <span class="tag">早期有区分度，之后饱和</span></h3>
+    <p class="lede" id="abScoreLede"></p>
+    <div class="grid2">
+      <figure class="card" id="c-ab-wall"></figure>
+      <figure class="card" id="c-ab-games"></figure>
+    </div>
+    <div style="height:12px"></div>
+    <table class="check" id="abTable"></table>
+    <div class="note-box" id="abNote"></div>
+  </section>
+
+  <h2>战术测试位 <span class="tag">有唯一正解的人造局面</span></h2>
+  <p class="lede">胜率会被对手强弱影响，所以另外做了一组"考卷"：手工摆几个有明确正解的局面（成五、封堵对手成五、堵活三），看网络<b>不做搜索</b>时的原始策略输出落在哪里。热力图颜色越深＝策略概率越高，红圈是正解。</p>
+  <div class="ctl" id="probeArmBtns"></div>
+  <div class="ctl" id="probeIterBtns"></div>
+  <div class="ctl" id="probeSrcBtns"></div>
+  <div class="probe-grid" id="probeGrid"></div>
+
+  <h2>GPU 与吞吐 <span class="tag">全程逐秒采样</span></h2>
+  <p class="lede" id="gpuLede"></p>
+  <div class="grid2">
+    <figure class="card" id="c-gpu-util"></figure>
+    <figure class="card" id="c-gpu-power"></figure>
+  </div>
+  <div style="height:12px"></div>
+  <div class="grid2">
+    <figure class="card" id="c-time"></figure>
+    <figure class="card" id="c-gpu-mem"></figure>
+  </div>
+
+  <h2>方法与配置</h2>
+  <table class="check" id="cfgTable"></table>
+  <div class="note-box" id="methodNote"></div>
+
+  <footer id="foot"></footer>
+</div>
+
+<script>
+const DATA = __DATA_JSON__;
+
+/* ---------- theme ---------- */
+(function () {
+  const btn = document.getElementById("themeBtn");
+  const states = [["", "主题：跟随系统"], ["light", "主题：浅色"], ["dark", "主题：深色"]];
+  let i = 0;
+  btn.addEventListener("click", () => {
+    i = (i + 1) % states.length;
+    const [v, label] = states[i];
+    if (v) document.documentElement.setAttribute("data-theme", v);
+    else document.documentElement.removeAttribute("data-theme");
+    btn.textContent = label;
+    document.dispatchEvent(new CustomEvent("themechange"));
+  });
+})();
+function css(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+/* ---------- helpers ---------- */
+const fmtInt = (n) => Math.round(n).toLocaleString("en-US");
+const fmt1 = (n) => (Math.round(n * 10) / 10).toLocaleString("en-US");
+const fmt = (n, d = 2) => Number(n).toLocaleString("en-US", { maximumFractionDigits: d });
+const pct = (n, d = 0) => fmt(n * 100, d) + "%";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+function mkFigCap(fig, o) {
+  const cap = document.createElement("figcaption");
+  const tw = document.createElement("div");
+  const t = document.createElement("span"); t.className = "fig-title"; t.textContent = o.title;
+  tw.appendChild(t);
+  if (o.note) { const n = document.createElement("span"); n.className = "fig-note"; n.textContent = " · " + o.note; tw.appendChild(n); }
+  cap.appendChild(tw);
+  const act = document.createElement("div"); act.className = "fig-actions";
+  const tb = document.createElement("button");
+  tb.className = "tbl-btn"; tb.type = "button"; tb.textContent = "表格";
+  tb.setAttribute("aria-pressed", "false");
+  act.appendChild(tb); cap.appendChild(act); fig.appendChild(cap);
+  tb.addEventListener("click", () => {
+    const on = fig.classList.toggle("show-table");
+    tb.setAttribute("aria-pressed", String(on));
+  });
+  return tb;
+}
+function niceTicks(min, max, n = 4) {
+  const span = max - min || 1;
+  const step0 = span / n;
+  const mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  let step = mag;
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * mag >= step0) { step = m * mag; break; }
+  const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+  const ticks = [];
+  for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(+v.toFixed(10));
+  return ticks;
+}
+
+/* ---------- line chart ---------- */
+function lineChart(o) {
+  const fig = document.getElementById(o.el);
+  if (!fig) return;
+  const W = 520, H = o.h || 230, M = { t: 14, r: 16, b: 34, l: 54 };
+  mkFigCap(fig, o);
+  const vis = o.series.filter(s => s.points && s.points.length);
+  if (!vis.length) { const p = document.createElement("p"); p.className = "fig-note"; p.textContent = "无数据"; fig.appendChild(p); return; }
+  if (vis.length >= 2) {
+    const lg = document.createElement("div"); lg.className = "legend";
+    for (const s of vis) {
+      const k = document.createElement("span"); k.className = "key";
+      const i = document.createElement("i"); i.style.borderTopColor = s.color;
+      if (s.dash) i.style.borderTopStyle = "dashed";
+      k.appendChild(i); k.appendChild(document.createTextNode(s.name)); lg.appendChild(k);
+    }
+    fig.appendChild(lg);
+  }
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null);
+  box.appendChild(svg);
+
+  const xs = vis.flatMap(s => s.points.map(p => p[0]));
+  const ys = vis.flatMap(s => s.points.map(p => p[1]));
+  const xmin = o.xMin !== undefined ? o.xMin : Math.min(...xs);
+  const xmax = Math.max(...xs);
+  let ymin = o.yMin !== undefined ? o.yMin : Math.min(...ys, o.annotY ? o.annotY.y : Infinity);
+  let ymax = o.yMax !== undefined ? o.yMax : Math.max(...ys, o.annotY ? o.annotY.y : -Infinity);
+  if (ymin === ymax) { ymin -= 1; ymax += 1; }
+  const yticks = niceTicks(ymin, ymax, 4);
+  ymin = Math.min(ymin, yticks[0]); ymax = Math.max(ymax, yticks[yticks.length - 1]);
+  const X = x => M.l + (x - xmin) / (xmax - xmin || 1) * (W - M.l - M.r);
+  const Y = y => H - M.b - (y - ymin) / (ymax - ymin || 1) * (H - M.t - M.b);
+
+  /* shaded spans behind the grid (used for the rule-guided phase) */
+  for (const sp of (o.spans || [])) {
+    el("rect", { x: X(sp.x0), y: M.t, width: Math.max(0, X(sp.x1) - X(sp.x0)),
+                 height: H - M.t - M.b, fill: sp.color || "var(--s2)", opacity: sp.opacity || 0.07 }, svg);
+    if (sp.label) {
+      /* labelAt "span-end" hangs the caption off the band's inner right edge
+         instead of its top-left corner -- use it when the top-left is already
+         taken by a y tick sitting at the plot ceiling. */
+      const atEnd = sp.labelAt === "span-end";
+      const tx = el("text", {
+        x: atEnd ? X(sp.x1) - 4 : X(sp.x0) + 4, y: M.t + 12, "font-size": 10,
+        "text-anchor": atEnd ? "end" : "start", fill: "var(--muted)" }, svg);
+      tx.textContent = sp.label;
+    }
+  }
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  const xticks = niceTicks(xmin, xmax, 5).filter(t => t >= xmin - 1e-9 && t <= xmax + 1e-9);
+  for (const t of xticks) {
+    const tx = el("text", { x: X(t), y: H - M.b + 16, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.xFmt ? o.xFmt(t) : fmt(t);
+  }
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 3, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+  if (o.annotY) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(o.annotY.y), y2: Y(o.annotY.y), stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    /* below: true drops the label under the line, for charts whose series ends
+       right on top of it (the h2h score rate lands within a few % of 50%). */
+    const ay = Y(o.annotY.y) + (o.annotY.below ? 12 : -5);
+    const tx = el("text", { x: W - M.r, y: ay, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    tx.textContent = o.annotY.label;
+  }
+  for (const s of vis) {
+    if (s.area) {
+      const d = "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L") +
+        `L${X(s.points[s.points.length - 1][0])},${Y(Math.max(ymin, 0))}L${X(s.points[0][0])},${Y(Math.max(ymin, 0))}Z`;
+      el("path", { d, fill: s.color, opacity: 0.1, stroke: "none" }, svg);
+    }
+    /* Per-point error whiskers, drawn under the line. Only worth it where a
+       single point carries few enough observations that the eye would otherwise
+       read noise as signal -- the head-to-head score rate is 16 openings a
+       point, so its 2-SE band is wide enough to swallow the whole y range. */
+    if (s.err) for (let i = 0; i < s.points.length; i++) {
+      const e = s.err[i];
+      if (e == null) continue;
+      const p = s.points[i], lo = Math.max(ymin, p[1] - e), hi = Math.min(ymax, p[1] + e);
+      el("line", { x1: X(p[0]), x2: X(p[0]), y1: Y(lo), y2: Y(hi),
+                   stroke: s.color, "stroke-width": 1.2, opacity: 0.45 }, svg);
+      for (const yv of [lo, hi])
+        el("line", { x1: X(p[0]) - 3, x2: X(p[0]) + 3, y1: Y(yv), y2: Y(yv),
+                     stroke: s.color, "stroke-width": 1.2, opacity: 0.45 }, svg);
+    }
+    el("path", {
+      d: "M" + s.points.map(p => `${X(p[0])},${Y(p[1])}`).join("L"),
+      fill: "none", stroke: s.color, "stroke-width": s.deemph ? 1.4 : 2,
+      "stroke-linejoin": "round", "stroke-linecap": "round",
+      ...(s.dash ? { "stroke-dasharray": "5 4" } : {}), opacity: s.deemph ? 0.5 : 1,
+    }, svg);
+    if (s.marker) for (const p of s.points)
+      el("circle", { cx: X(p[0]), cy: Y(p[1]), r: 3.5, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 1.5 }, svg);
+  }
+  if (o.endLabel) {
+    const s = vis[o.endLabel.series || 0];
+    const p = s.points[s.points.length - 1];
+    const tx = el("text", { x: X(p[0]) - 6, y: Y(p[1]) - 9, "text-anchor": "end", "font-size": 11, "font-weight": 600, fill: "var(--text-1)" }, svg);
+    tx.textContent = o.endLabel.fmt ? o.endLabel.fmt(p[1]) : fmt(p[1]);
+  }
+
+  const cross = el("line", { y1: M.t, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1, visibility: "hidden" }, svg);
+  const dots = vis.map(s => el("circle", { r: 4.5, fill: s.color, stroke: "var(--surface-1)", "stroke-width": 2, visibility: "hidden" }, svg));
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  const xsSorted = [...new Set(xs)].sort((a, b) => a - b);
+  svg.addEventListener("pointermove", (ev) => {
+    const r = svg.getBoundingClientRect();
+    const mx = (ev.clientX - r.left) / r.width * W;
+    if (mx < M.l || mx > W - M.r) { hide(); return; }
+    const xv = xmin + (mx - M.l) / (W - M.l - M.r) * (xmax - xmin);
+    let best = xsSorted[0];
+    for (const x of xsSorted) if (Math.abs(x - xv) < Math.abs(best - xv)) best = x;
+    cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best));
+    cross.setAttribute("visibility", "visible");
+    tip.textContent = "";
+    const tx = document.createElement("div"); tx.className = "tx";
+    tx.textContent = (o.xLabel || "x") + " " + (o.xFmt ? o.xFmt(best) : fmt(best));
+    tip.appendChild(tx);
+    vis.forEach((s, i) => {
+      const p = s.points.reduce((a, b) => Math.abs(b[0] - best) < Math.abs(a[0] - best) ? b : a);
+      if (Math.abs(p[0] - best) > (xmax - xmin) / Math.max(8, s.points.length) * 2.5) { dots[i].setAttribute("visibility", "hidden"); return; }
+      dots[i].setAttribute("cx", X(p[0])); dots[i].setAttribute("cy", Y(p[1]));
+      dots[i].setAttribute("visibility", "visible");
+      const row = document.createElement("div"); row.className = "row";
+      const key = document.createElement("i"); key.style.borderTopColor = s.color; row.appendChild(key);
+      const b = document.createElement("b"); b.textContent = o.yFmt ? o.yFmt(p[1]) : fmt(p[1]); row.appendChild(b);
+      const nm = document.createElement("span"); nm.textContent = s.name; row.appendChild(nm);
+      tip.appendChild(row);
+    });
+    tip.style.display = "block";
+    const bx = box.getBoundingClientRect();
+    let left = (X(best) / W) * bx.width + 14;
+    if (left + tip.offsetWidth > bx.width - 4) left = (X(best) / W) * bx.width - tip.offsetWidth - 14;
+    tip.style.left = left + "px";
+    tip.style.top = Math.max(0, (ev.clientY - bx.top) - tip.offsetHeight - 12) + "px";
+  });
+  function hide() { cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); tip.style.display = "none"; }
+  svg.addEventListener("pointerleave", hide);
+
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  const th0 = document.createElement("th"); th0.textContent = o.xLabel || "x"; hr.appendChild(th0);
+  for (const s of vis) { const th = document.createElement("th"); th.textContent = s.name; hr.appendChild(th); }
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const step = Math.ceil(xsSorted.length / 40);
+  xsSorted.filter((_, i) => i % step === 0 || i === xsSorted.length - 1).forEach(x => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = o.xFmt ? o.xFmt(x) : fmt(x); tr.appendChild(td0);
+    for (const s of vis) {
+      const p = s.points.find(p => p[0] === x);
+      const td = document.createElement("td");
+      td.textContent = p ? (o.yFmt ? o.yFmt(p[1]) : fmt(p[1])) : "—";
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+}
+
+/* ---------- grouped bar chart ---------- */
+function barChart(o) {
+  const fig = document.getElementById(o.el);
+  if (!fig) return;
+  const W = 520, H = o.h || 230, M = { t: 24, r: 14, b: 38, l: 54 };
+  mkFigCap(fig, o);
+  const groups = o.groups;               // [{label, vals:[v...]}]
+  const series = o.series;               // [{name, color}]
+  if (series.length >= 2) {
+    const lg = document.createElement("div"); lg.className = "legend";
+    for (const s of series) {
+      const k = document.createElement("span"); k.className = "key";
+      const i = document.createElement("i"); i.style.borderTopColor = s.color;
+      k.appendChild(i); k.appendChild(document.createTextNode(s.name)); lg.appendChild(k);
+    }
+    fig.appendChild(lg);
+  }
+  const box = document.createElement("div"); box.className = "chart-box"; fig.appendChild(box);
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" }, null); box.appendChild(svg);
+  const all = groups.flatMap(g => g.vals.filter(v => v != null));
+  const yticks = niceTicks(0, o.yMax !== undefined ? o.yMax : Math.max(...all, 1e-9), 4);
+  const top = yticks[yticks.length - 1];
+  const Y = v => H - M.b - v / top * (H - M.t - M.b);
+  for (const t of yticks) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(t), y2: Y(t), stroke: "var(--grid)", "stroke-width": 1 }, svg);
+    const tx = el("text", { x: M.l - 8, y: Y(t) + 3.5, "text-anchor": "end", "font-size": 10.5, fill: "var(--muted)", style: "font-variant-numeric:tabular-nums" }, svg);
+    tx.textContent = o.yFmt ? o.yFmt(t) : fmt(t);
+  }
+  if (o.annotY !== undefined) {
+    el("line", { x1: M.l, x2: W - M.r, y1: Y(o.annotY.y), y2: Y(o.annotY.y), stroke: "var(--muted)", "stroke-width": 1, "stroke-dasharray": "4 3" }, svg);
+    const tx = el("text", { x: W - M.r, y: Y(o.annotY.y) - 4, "text-anchor": "end", "font-size": 10, fill: "var(--muted)" }, svg);
+    tx.textContent = o.annotY.label;
+  }
+  el("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }, svg);
+  const band = (W - M.l - M.r) / groups.length;
+  const ns = series.length;
+  const bw = Math.min(22, (band * 0.68) / ns);
+  const tip = document.createElement("div"); tip.className = "tip"; box.appendChild(tip);
+  groups.forEach((g, gi) => {
+    const c0 = M.l + band * (gi + 0.5);
+    const bars = [];
+    g.vals.forEach((v, si) => {
+      if (v == null) return;
+      const cx = c0 + (si - (ns - 1) / 2) * (bw + 3);
+      const y = Y(v), h = H - M.b - y, r = Math.min(3.5, bw / 2, h);
+      el("path", {
+        d: `M${cx - bw / 2},${H - M.b} L${cx - bw / 2},${y + r} Q${cx - bw / 2},${y} ${cx - bw / 2 + r},${y} L${cx + bw / 2 - r},${y} Q${cx + bw / 2},${y} ${cx + bw / 2},${y + r} L${cx + bw / 2},${H - M.b} Z`,
+        fill: series[si].color,
+      }, svg);
+      bars.push({ cx, y, v, si });
+    });
+    /* Value labels in a second pass, because two bars of nearly equal height put
+       their labels at the same baseline 25px apart -- and "1,312" is wider than
+       that, so real data rendered them as "1,3121,320". Stagger the later label
+       up by one line when its box would overlap the previous one. */
+    if (o.barLabels !== false) {
+      const placed = [];
+      for (const b of bars.slice().sort((p, q) => p.cx - q.cx)) {
+        const txt = o.yFmt ? o.yFmt(b.v) : fmt(b.v);
+        const w = txt.length * 5.6;
+        let ly = b.y - 5;
+        for (const p of placed)
+          if (Math.abs(p.cx - b.cx) < (p.w + w) / 2 + 2 && Math.abs(p.ly - ly) < 10)
+            ly = Math.min(ly, p.ly - 10.5);
+        placed.push({ cx: b.cx, w, ly });
+        const vl = el("text", { x: b.cx, y: Math.max(9, ly), "text-anchor": "middle",
+                                "font-size": 9.5, "font-weight": 600, fill: "var(--text-1)" }, svg);
+        vl.textContent = txt;
+      }
+    }
+    const xl = el("text", { x: c0, y: H - M.b + 15, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg);
+    xl.textContent = g.label;
+    const hit = el("rect", { x: c0 - band / 2, y: M.t, width: band, height: H - M.t - M.b, fill: "transparent" }, svg);
+    hit.addEventListener("pointermove", () => {
+      tip.textContent = "";
+      const tx = document.createElement("div"); tx.className = "tx"; tx.textContent = g.label; tip.appendChild(tx);
+      g.vals.forEach((v, si) => {
+        if (v == null) return;
+        const row = document.createElement("div"); row.className = "row";
+        const key = document.createElement("i"); key.style.borderTopColor = series[si].color; row.appendChild(key);
+        const bb = document.createElement("b"); bb.textContent = o.yFmt ? o.yFmt(v) : fmt(v); row.appendChild(bb);
+        const nm = document.createElement("span"); nm.textContent = series[si].name; row.appendChild(nm);
+        tip.appendChild(row);
+      });
+      tip.style.display = "block";
+      const bx = box.getBoundingClientRect();
+      let left = (c0 / W) * bx.width + 12;
+      if (left + tip.offsetWidth > bx.width - 4) left = (c0 / W) * bx.width - tip.offsetWidth - 12;
+      tip.style.left = left + "px";
+      tip.style.top = "6px";
+    });
+    hit.addEventListener("pointerleave", () => { tip.style.display = "none"; });
+  });
+  if (o.xLabel) { const tx = el("text", { x: (M.l + W - M.r) / 2, y: H - 3, "text-anchor": "middle", "font-size": 10.5, fill: "var(--muted)" }, svg); tx.textContent = o.xLabel; }
+
+  const table = document.createElement("table"); table.className = "dtable";
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  const th0 = document.createElement("th"); th0.textContent = o.xLabel || "类别"; hr.appendChild(th0);
+  series.forEach(s => { const th = document.createElement("th"); th.textContent = s.name; hr.appendChild(th); });
+  thead.appendChild(hr); table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  groups.forEach(g => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = g.label; tr.appendChild(td0);
+    g.vals.forEach(v => { const td = document.createElement("td"); td.textContent = v == null ? "—" : (o.yFmt ? o.yFmt(v) : fmt(v)); tr.appendChild(td); });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody); fig.appendChild(table);
+}
+
+/* ---------- build page ---------- */
+const { arms, arm_order, node } = DATA;
+const CROSS = DATA.cross_arm || null;   // head-to-head arm-vs-arm eval, may be absent
+const ARM_LABEL = { pure: "纯 self-play", rules: "规则冷启动 → self-play", p15: "15×15 主线" };
+const ARM_COLOR = { pure: "var(--s1)", rules: "var(--s2)" };
+/* any arm tag not in the maps above still gets a stable label and colour */
+arm_order.forEach((t, i) => {
+  if (!ARM_LABEL[t]) ARM_LABEL[t] = t;
+  if (!ARM_COLOR[t]) ARM_COLOR[t] = `var(--s${(i % 6) + 1})`;
+});
+const A0 = arms[arm_order[0]];
+const B = arm_order.length > 1 ? arms[arm_order[1]] : null;
+const BOARD_N = A0.cfg.board;
+/* header subtitle: board size and the A/B sentence come from the data, so a
+   single-arm 15x15 report does not claim the July 9x9 two-arm experiment */
+document.getElementById("subLede").textContent =
+  `在 H20 上用 AlphaZero 框架（MCTS 自我对弈 + 策略/价值网络）从随机权重开始学下 ` +
+  `${BOARD_N}×${BOARD_N} 五子棋，无人类棋谱、无开局库。` +
+  (B ? `同时做了一组 A/B：纯 self-play 对比 冷启动阶段注入战术规则先验、再退火到纯 self-play。`
+     : `单臂训练（${(arms[arm_order[0]].cfg || {}).beta0 > 0 ? "带规则冷启动" : "纯 self-play"}），` +
+       `评估走固定基线 + 锚点检查点滚动对局。`);
+/* section tags written for the two-arm A/B read wrong over one arm */
+if (!B) document.querySelectorAll("h2 .tag").forEach(s => {
+  if (s.textContent === "两条臂并列") s.textContent = "单臂训练";
+});
+
+function lastEval(m, oppPrefix) {
+  const evs = (m.evals || []).filter(e => e.matches.some(x => x.opponent.startsWith(oppPrefix)));
+  if (!evs.length) return null;
+  const e = evs[evs.length - 1];
+  return e.matches.find(x => x.opponent.startsWith(oppPrefix));
+}
+function totalHours(m) {
+  return ((m.phase_end || 0) - (m.phase_start || 0)) / 3600;
+}
+function evalEvery(m) {
+  const its = (m.evals || []).map(e => e.iter);
+  return its.length >= 2 ? its[1] - its[0] : (m.cfg.iters || 1);
+}
+function eloGain(m) {
+  const e = m.elo || [];
+  if (!e.length) return null;
+  return Math.max(...e.map(x => x.elo)) - e[0].elo;
+}
+function lastTac(m) {
+  const t = m.tactical || [];
+  return t.length ? t[t.length - 1] : null;
+}
+function firstTac(m) {
+  const t = m.tactical || [];
+  return t.length ? t[0] : null;
+}
+
+/* chips */
+{
+  const chips = document.getElementById("chips");
+  [node.date + " · " + node.host, node.gpus, "Driver " + node.driver,
+   "PyTorch " + (node.torch || "").split("+")[0] + " · CUDA " + node.cuda,
+   A0.game, `网络 ${(A0.net.params / 1e6).toFixed(2)}M 参数 · ${A0.net.blocks} 残差块`,
+   `${A0.workers} self-play 进程 / GPU ${A0.gpus.join(",")}`,
+  ].forEach(t => {
+    const c = document.createElement("span"); c.className = "chip"; c.textContent = t; chips.appendChild(c);
+  });
+}
+
+/* tiles */
+{
+  const tiles = [];
+  const mp = lastEval(A0, "pure-mcts");
+  const rg = lastEval(A0, "rule-greedy");
+  const hard = A0.final_hard;
+  const tacA = lastTac(A0), tac0 = firstTac(A0);
+  const eg = eloGain(A0);
+  if (hard) tiles.push({
+    lbl: "对强化 pure-MCTS 胜率", val: pct(hard.win_rate, 0), unit: "",
+    delta: `${hard.win}胜 ${hard.loss}负 ${hard.draw}平 · ${hard.opponent}`, up: hard.win_rate > 0.5,
+  });
+  else if (mp) tiles.push({
+    lbl: "对 pure-MCTS 基线胜率", val: pct(mp.win_rate, 0), unit: "",
+    delta: `${mp.win}胜 ${mp.loss}负 ${mp.draw}平 · ${mp.opponent}`, up: mp.win_rate > 0.5,
+  });
+  if (rg) tiles.push({
+    lbl: "对规则贪心基线胜率", val: pct(rg.win_rate, 0), unit: "",
+    delta: `${rg.win}胜 ${rg.loss}负 ${rg.draw}平 · 会成五会封堵的启发式`, up: rg.win_rate > 0.5,
+  });
+  if (tacA) tiles.push({
+    lbl: "战术题正确率",
+    val: fmt(tacA.raw_acc * 100, 0), unit: "%",
+    delta: tac0 ? `原始策略不搜索 · ${pct(tac0.raw_acc, 0)} → ${pct(tacA.raw_acc, 0)}` : "",
+    up: !!(tac0 && tacA.raw_acc > tac0.raw_acc),
+  });
+  /* Elo tile. Prefer the cross-arm round-robin: it plays randomised openings, so
+     its N is real. The intra-arm ladder is ordering-only (empty board +
+     deterministic argmax play = 2 distinct games per pair, not N), and a tile is
+     what gets screenshotted, so that caveat has to travel with the number. */
+  const jEl = (CROSS && (CROSS.elo || []).length)
+    ? Math.max(...CROSS.elo.filter(e => e.arm === CROSS.arms[0]).map(e => e.elo)) : null;
+  if (jEl !== null) tiles.push({
+    lbl: "最强检查点 Elo", val: "+" + fmt(jEl, 0), unit: "",
+    delta: `初始权重 = 0 基准 · ${CROSS.elo.length} 个检查点随机开局循环赛`, up: jEl > 0,
+  });
+  else if (eg !== null) tiles.push({
+    lbl: "自身 Elo 增长", val: (eg >= 0 ? "+" : "") + fmt(eg, 0), unit: "",
+    delta: `初始权重 = 0 基准 · ${A0.elo.length} 个检查点循环赛 · `
+      + ((A0.elo_detail || {}).temp ? `温度采样，有分辨率` : `只排顺序`), up: eg > 0,
+  });
+  const totGames = A0.iterations.length ? A0.iterations[A0.iterations.length - 1].cum_games : 0;
+  tiles.push({
+    lbl: "自我对弈总局数", val: fmtInt(totGames), unit: "局",
+    delta: `${A0.cfg.iters} 轮 × ${A0.cfg.games_per_iter} 局 · 每手 ${A0.cfg.sims} 次模拟`, up: false,
+  });
+  tiles.push({
+    lbl: "单臂训练耗时", val: fmt1(totalHours(A0)), unit: "小时",
+    delta: B ? `另一臂 ${fmt1(totalHours(B))} 小时 · 共 ${fmt1(totalHours(A0) + totalHours(B))} 小时` : "", up: false,
+  });
+  const wrap = document.getElementById("tiles");
+  for (const t of tiles) {
+    const d = document.createElement("div"); d.className = "tile";
+    const l = document.createElement("div"); l.className = "lbl"; l.textContent = t.lbl; d.appendChild(l);
+    const v = document.createElement("div"); v.className = "val"; v.textContent = t.val;
+    if (t.unit) { const s = document.createElement("small"); s.textContent = t.unit; v.appendChild(s); }
+    d.appendChild(v);
+    const dd = document.createElement("div"); dd.className = "delta" + (t.up ? " up" : ""); dd.textContent = t.delta; d.appendChild(dd);
+    wrap.appendChild(d);
+  }
+}
+
+/* verdict + checklist */
+{
+  const mpA = lastEval(A0, "pure-mcts"), mpB = B ? lastEval(B, "pure-mcts") : null;
+  const rgA = lastEval(A0, "rule-greedy"), rgB = B ? lastEval(B, "rule-greedy") : null;
+  const tacA = lastTac(A0), tac0 = firstTac(A0);
+  const egA = eloGain(A0);
+  /* Prefer the cross-arm round-robin's rating for arm A when it exists: it plays
+     randomised openings, so unlike the intra-arm ladder it is not measuring two
+     distinct games per pair. Same units (anchored at the random init), so the
+     sentence only has to swap the caveat. */
+  const jointA = (CROSS && (CROSS.elo || []).length)
+    ? Math.max(...CROSS.elo.filter(e => e.arm === CROSS.arms[0]).map(e => e.elo)) : null;
+  const parts = [];
+  parts.push(`AlphaZero 在 node09 的 H20 上从随机权重开始，完全靠自我对弈学会了下 ${A0.cfg.board}×${A0.cfg.board} 五子棋：`);
+  if (mpA) parts.push(`最终对 pure-MCTS 基线（${mpA.opponent}）胜率 ${pct(mpA.win_rate, 0)}，`);
+  if (rgA) parts.push(`对会成五会封堵的规则贪心基线胜率 ${pct(rgA.win_rate, 0)}，`);
+  if (tacA && tac0) parts.push(`战术题（成五 / 封堵）原始策略正确率 ${pct(tac0.raw_acc, 0)} → ${pct(tacA.raw_acc, 0)}，`);
+  if (jointA !== null) parts.push(`把两条臂的 ${CROSS.elo.length} 个检查点放进同一个随机开局循环赛，` +
+    `${ARM_LABEL[CROSS.arms[0]] || CROSS.arms[0]} 的最强检查点相对初始权重 +${fmt(jointA, 0)} Elo —— `);
+  else if (egA !== null) parts.push(`检查点之间的循环赛 Elo 相对初始权重 ${egA >= 0 ? "+" : ""}${fmt(egA, 0)}`
+    + ((A0.elo_detail || {}).temp ? `（温度采样循环赛，见该图下的分辨率）` : `（这把梯子只排顺序，见该图下的说明）`) + ` —— `);
+  parts.push(`训练确实在产生棋力，不是噪声。`);
+  if (B) {
+    /* Wall-clock is only comparable when both arms have run the same number of
+       iterations. A report generated while the second arm is still training
+       would otherwise read its missing hours as a speedup. */
+    const nA = A0.iterations.length, nB = B.iterations.length;
+    const dh = totalHours(B) - totalHours(A0);
+    /* Both arms do the same 50 iterations of the same work, so their wall clocks
+       land within a couple of minutes of each other -- and "相差 +0 小时" reads
+       like a missing number rather than a real answer. Below 6 minutes, say it in
+       minutes and call it what it is: the same budget, which is the premise of
+       the comparison, not a result of it. */
+    const dmin = dh * 60;
+    parts.push(`关于"冷启动先用规则、再过渡到纯 self-play 能否提速"：两条臂同种子、同配置、只差 β₀（${A0.cfg.beta0} vs ${B.cfg.beta0}），` +
+      (nA !== nB
+        ? `其中${nA < nB ? (ARM_LABEL[arm_order[0]] || arm_order[0]) : (ARM_LABEL[arm_order[1]] || arm_order[1])}` +
+          ` 只跑到第 ${Math.min(nA, nB)} 轮（另一条 ${Math.max(nA, nB)} 轮），墙钟耗时先不比。`
+        : Math.abs(dmin) < 6
+          ? `跑完 ${nA} 轮的墙钟耗时几乎一样（相差 ${fmt1(Math.abs(dmin))} 分钟，约 ${pct(Math.abs(dh) / totalHours(A0), 1)}）` +
+            `—— 注入规则先验不额外花时间，所以"提速"只能体现在同样预算下棋力更高。`
+          : `墙钟耗时相差 ${dh >= 0 ? "+" : ""}${fmt1(dh)} 小时。`));
+    /* Answer with the head-to-head if it exists. The fixed baselines below
+       saturate inside ~15 iterations, so quoting them here would put the one
+       measurement that cannot separate the arms in the most prominent place on
+       the page. Fall back to them only when there is no cross-arm data. */
+    const hh = (CROSS && (CROSS.matched || []).filter(m => m.score != null)) || [];
+    const hhPool = hh.flatMap(m => m.pair_scores || []);
+    if (hhPool.length >= 2) {
+      const mu = hhPool.reduce((s, x) => s + x, 0) / hhPool.length;
+      const v = hhPool.reduce((s, x) => s + (x - mu) * (x - mu), 0) / (hhPool.length - 1);
+      const se2 = 2 * Math.sqrt(v / hhPool.length);
+      parts.push(`两条臂的同轮检查点直接对打 ${hhPool.length} 个开局对，规则臂得分率 ` +
+        `${pct(mu, 1)} ± ${pct(se2, 1)}（2 个标准误）—— ` +
+        (mu - 0.5 > se2 ? `在同等算力下确实更强。`
+          : 0.5 - mu > se2 ? `反而更弱。`
+            : `在这个规模上测不出差别。`));
+    } else {
+      /* No cross-arm data: fall back to the saturated baselines, but print
+         W-L-D rather than a bare rate. On real data the rules arm's last
+         rule-greedy eval was 4-0-4 (75%) against the other arm's 8-0-0 (100%) --
+         a bare "75% vs 100%" reads as "weaker" when neither arm ever lost and
+         the sample is 8 games. */
+      const wld = e => `${e.win}胜${e.loss}负${e.draw}平`;
+      const bits = [];
+      if (rgA && rgB) bits.push(`对规则贪心 ${wld(rgB)} vs ${wld(rgA)}`);
+      if (mpA && mpB) bits.push(`对 pure-MCTS ${wld(mpB)} vs ${wld(mpA)}`);
+      if (bits.length) parts.push(`终局规则臂 vs 纯 self-play：${bits.join("、")}` +
+        `（这两条基线在 15 轮内就饱和，只能看个大概）。`);
+    }
+    parts.push(`逐轮差异见下方"训练效率对比"一节 —— 该问题的答案取决于早期是否更快到达同一水平，而不只是终局分数。`);
+  }
+  document.getElementById("verdictLede").textContent = parts.join("");
+
+  const it0 = A0.iterations[0] || {}, itL = A0.iterations[A0.iterations.length - 1] || {};
+  const rows = [
+    ["AlphaZero 框架完整跑通", `MCTS 自我对弈 → 生成训练样本 → 策略/价值网络更新，闭环 ${A0.iterations.length}/${A0.cfg.iters} 轮`, A0.iterations.length > 0],
+    ["从零开始、无人类知识", "随机初始化权重，无棋谱、无开局库；训练目标只有 MCTS 访问计数与对局胜负", true],
+    ["棋力可量化增长",
+      [rgA ? `对规则贪心胜率 ${pct(rgA.win_rate, 0)}` : null,
+       mpA ? `对 ${mpA.opponent} 胜率 ${pct(mpA.win_rate, 0)}` : null,
+       /* Quote the randomised-opening round-robin when it exists; the intra-arm
+          ladder only orders checkpoints, and a checklist row is exactly where a
+          reader takes a number at face value. */
+       jointA !== null ? `随机开局循环赛 Elo +${fmt(jointA, 0)}`
+         : egA !== null ? `检查点循环赛 Elo ${egA >= 0 ? "+" : ""}${fmt(egA, 0)}`
+           + ((A0.elo_detail || {}).temp ? `（温度采样）` : `（只排顺序）`) : null,
+      ].filter(Boolean).join("；"),
+      !!(rgA && rgA.win_rate > 0.5) || egA > 0],
+    ["学到真实战术",
+      tacA ? `成五 / 封堵测试位原始策略正确率 ${pct(tac0.raw_acc, 0)} → ${pct(tacA.raw_acc, 0)}（不含搜索）` : "—",
+      !!(tacA && tacA.raw_acc > 0.5)],
+    ["价值头有效", `explained variance ${fmt(it0.explained_var, 2)} → ${fmt(itL.explained_var, 2)}，价值网络能预测对局结果`, itL.explained_var > 0.2],
+    ["策略在收敛", `策略熵 ${fmt(it0.entropy, 2)} → ${fmt(itL.entropy, 2)}（上限 ln${A0.cfg.board * A0.cfg.board}=${fmt(Math.log(A0.cfg.board * A0.cfg.board), 2)}），从均匀乱下变为有主见`, itL.entropy < it0.entropy],
+    ["多 GPU 并行自我对弈", `${A0.workers} 个 worker 进程分布在 GPU ${[...new Set(A0.gpus)].join("/")}，梯度更新在 ${A0.device}`, true],
+    ["规则冷启动 A/B", B ? `同种子同配置跑两臂（β₀=${A0.cfg.beta0} 与 β₀=${B.cfg.beta0}）`
+      + (CROSS && (CROSS.matched || []).length
+        ? `，另用 ${CROSS.matched.length} 个同轮检查点直接对打，结论见下`
+        : `，结论见下`) : "未执行（只有一条臂的数据）", !!B],
+    ["过程与结果可视化", "本报告：棋局回放 + 训练曲线 + 战术热力图 + GPU 监控", true],
+  ];
+  const tbl = document.getElementById("checklist");
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  ["验证项", "证据", "状态"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr.appendChild(th); });
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tb = document.createElement("tbody");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    const td0 = document.createElement("td"); td0.textContent = r[0]; tr.appendChild(td0);
+    const td1 = document.createElement("td"); td1.textContent = r[1]; tr.appendChild(td1);
+    const td2 = document.createElement("td"); td2.textContent = r[2] ? "✓" : "△";
+    td2.className = r[2] ? "ok" : "no"; tr.appendChild(td2);
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+}
+
+/* ---------- board replay ---------- */
+(function () {
+  const cvs = document.getElementById("bdCanvas");
+  const ctx = cvs.getContext("2d");
+  const armBtns = document.getElementById("bdArmBtns");
+  const gameBtns = document.getElementById("bdGameBtns");
+  const meta = document.getElementById("bdMeta");
+  const hint = document.getElementById("bdHint");
+  const slider = document.getElementById("bdSlider");
+  let arm = arm_order[0], gi = 0, ply = 0, playing = false, raf = null, lastT = 0;
+  const FPS = 2.6;
+
+  function games() { return arms[arm].sample_games || []; }
+
+  function gameLabel(g) {
+    if (g.kind === "selfplay") return `自对弈 · 第 ${g.iter} 轮`;
+    /* The iteration matters here too: several eval games share one opponent,
+       and without it the tab strip reads as the same button repeated. */
+    return `第 ${g.iter} 轮 · vs ${g.kind.replace("vs-", "")}`;
+  }
+
+  function buildArmBtns() {
+    armBtns.textContent = "";
+    if (arm_order.length < 2) return;
+    arm_order.forEach(t => {
+      const b = document.createElement("button");
+      b.className = "ctl-btn"; b.type = "button"; b.textContent = ARM_LABEL[t] || t;
+      b.setAttribute("aria-pressed", String(t === arm));
+      b.addEventListener("click", () => {
+        arm = t;
+        gi = Math.max(0, (arms[t].sample_games || []).length - 1);
+        ply = (arms[t].sample_games || []).length ? arms[t].sample_games[gi].moves.length : 0;
+        buildArmBtns(); buildGameBtns(); render();
+      });
+      armBtns.appendChild(b);
+    });
+  }
+  function buildGameBtns() {
+    gameBtns.textContent = "";
+    games().forEach((g, i) => {
+      const b = document.createElement("button");
+      b.className = "ctl-btn"; b.type = "button"; b.textContent = gameLabel(g);
+      b.setAttribute("aria-pressed", String(i === gi));
+      b.addEventListener("click", () => {
+        gi = i; ply = (games()[i].moves || []).length; buildGameBtns(); render();
+      });
+      gameBtns.appendChild(b);
+    });
+  }
+
+  /* replay the move list to find the five-in-a-row at the end, for highlighting */
+  function winLine(moves, winner) {
+    if (!winner) return null;
+    const g = new Int8Array(BOARD_N * BOARD_N);
+    let p = 1;
+    for (const m of moves) { g[m] = p; p = -p; }
+    const dirs = [[0, 1], [1, 0], [1, 1], [1, -1]];
+    for (let r = 0; r < BOARD_N; r++) for (let c = 0; c < BOARD_N; c++) {
+      if (g[r * BOARD_N + c] !== winner) continue;
+      for (const [dr, dc] of dirs) {
+        const cells = [];
+        for (let k = 0; k < A0.cfg.n_in_row; k++) {
+          const rr = r + dr * k, cc = c + dc * k;
+          if (rr < 0 || rr >= BOARD_N || cc < 0 || cc >= BOARD_N) break;
+          if (g[rr * BOARD_N + cc] !== winner) break;
+          cells.push([rr, cc]);
+        }
+        if (cells.length >= A0.cfg.n_in_row) return cells;
+      }
+    }
+    return null;
+  }
+
+  function render() {
+    const gs = games();
+    if (!gs.length) return;
+    const g = gs[Math.min(gi, gs.length - 1)];
+    const moves = g.moves;
+    ply = Math.max(0, Math.min(ply, moves.length));
+    slider.max = String(moves.length);
+    slider.value = String(ply);
+
+    const W = cvs.width, H = cvs.height;
+    ctx.clearRect(0, 0, W, H);
+    const pad = 34, cell = (W - pad * 2) / (BOARD_N - 1);
+    ctx.fillStyle = css("--board");
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = css("--board-line"); ctx.lineWidth = 1;
+    for (let i = 0; i < BOARD_N; i++) {
+      const v = pad + i * cell;
+      ctx.beginPath(); ctx.moveTo(pad, v); ctx.lineTo(W - pad, v); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(v, pad); ctx.lineTo(v, H - pad); ctx.stroke();
+    }
+    // coordinates
+    ctx.fillStyle = css("--text-2"); ctx.font = "10px system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    for (let i = 0; i < BOARD_N; i++) {
+      ctx.fillText(String(i), pad + i * cell, 14);
+      ctx.fillText(String(i), 14, pad + i * cell);
+    }
+    // star point
+    ctx.fillStyle = css("--board-line");
+    const mid = (BOARD_N - 1) / 2;
+    ctx.beginPath(); ctx.arc(pad + mid * cell, pad + mid * cell, 3, 0, Math.PI * 2); ctx.fill();
+
+    const line = ply === moves.length ? winLine(moves, g.winner) : null;
+    const lineSet = new Set((line || []).map(([r, c]) => r * BOARD_N + c));
+
+    for (let k = 0; k < ply; k++) {
+      const a = moves[k], r = Math.floor(a / BOARD_N), c = a % BOARD_N;
+      const x = pad + c * cell, y = pad + r * cell;
+      const isBlack = k % 2 === 0;
+      const R = cell * 0.42;
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
+      ctx.fillStyle = isBlack ? css("--stone-b") : css("--stone-w");
+      ctx.fill();
+      ctx.strokeStyle = lineSet.has(a) ? css("--s3") : "rgba(0,0,0,.28)";
+      ctx.lineWidth = lineSet.has(a) ? 3 : 1;
+      ctx.stroke();
+      // move number
+      ctx.fillStyle = isBlack ? "rgba(255,255,255,.82)" : "rgba(0,0,0,.66)";
+      ctx.font = `${Math.round(cell * 0.34)}px system-ui, sans-serif`;
+      ctx.fillText(String(k + 1), x, y + 0.5);
+      // last-move marker
+      if (k === ply - 1) {
+        ctx.strokeStyle = css("--s2"); ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(x, y, R + 3.5, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+
+    meta.textContent = "";
+    const rows = [
+      ["对局", gameLabel(g)],
+      ["手数", `${ply} / ${moves.length}`],
+      ["结果", g.winner === 0 ? "平局（下满棋盘）" : (g.winner === 1 ? "黑胜" : "白胜")],
+    ];
+    if (g.kind && g.kind.startsWith("vs-"))
+      rows.push(["AlphaZero", g.az_is_black ? "执黑" : "执白"]);
+    rows.push(["训练轮次", "第 " + g.iter + " 轮"]);
+    for (const [k, v] of rows) {
+      const dt = document.createElement("dt"); dt.textContent = k; meta.appendChild(dt);
+      const dd = document.createElement("dd"); dd.textContent = v; meta.appendChild(dd);
+    }
+    hint.textContent = g.kind === "selfplay"
+      ? "自我对弈局：双方都是当时的同一个网络 + MCTS，带 Dirichlet 探索噪声，所以会看到一些试探性的下法。"
+      : "评估局：AlphaZero（无探索噪声）对固定基线，绿圈标出最后成五的五颗子。";
+  }
+
+  function loop(ts) {
+    raf = requestAnimationFrame(loop);
+    if (!playing) return;
+    if (ts - lastT < 1000 / FPS) return;
+    lastT = ts;
+    const gs = games();
+    const total = gs[Math.min(gi, gs.length - 1)].moves.length;
+    ply = ply >= total ? 0 : ply + 1;
+    render();
+  }
+
+  document.getElementById("bdPlay").addEventListener("click", (e) => {
+    playing = !playing;
+    e.currentTarget.textContent = playing ? "⏸ 暂停" : "▶ 播放";
+    e.currentTarget.setAttribute("aria-pressed", String(playing));
+  });
+  document.getElementById("bdPrev").addEventListener("click", () => { playing = false; ply = Math.max(0, ply - 1); render(); });
+  document.getElementById("bdNext").addEventListener("click", () => {
+    playing = false;
+    const gs = games(); ply = Math.min(gs[gi].moves.length, ply + 1); render();
+  });
+  document.getElementById("bdEnd").addEventListener("click", () => {
+    playing = false; ply = games()[gi].moves.length; render();
+  });
+  slider.addEventListener("input", () => { playing = false; ply = Number(slider.value); render(); });
+  document.addEventListener("themechange", render);
+
+  /* default to the last (strongest) game, shown at its final position */
+  gi = Math.max(0, games().length - 1);
+  ply = games().length ? games()[gi].moves.length : 0;
+  buildArmBtns(); buildGameBtns(); render();
+  raf = requestAnimationFrame(loop);
+})();
+
+/* ---------- training curves ---------- */
+{
+  const its = m => m.iterations || [];
+  const ruleSpan = B && B.cfg.beta0 > 0
+    ? [{ x0: 1, x1: Math.min(B.cfg.rule_iters + 1, B.cfg.iters), color: "var(--s2)", label: "规则先验退火区间" }]
+    : [];
+  const S = key => arm_order.map(t => ({
+    name: ARM_LABEL[t] || t, color: ARM_COLOR[t],
+    points: its(arms[t]).map(r => [r.iter, r[key]]),
+  }));
+
+  document.getElementById("curveLede").textContent =
+    `每一轮 = ${A0.cfg.games_per_iter} 局自我对弈（每手 ${A0.cfg.sims} 次 MCTS 模拟）+ ${A0.cfg.train_steps} 步梯度更新（batch ${A0.cfg.batch}）。` +
+    `策略损失是网络输出与 MCTS 访问分布的交叉熵，价值损失是对最终胜负的 MSE。` +
+    (ruleSpan.length ? `橙色阴影是规则臂注入战术先验的区间（β 从 ${B.cfg.beta0} 线性退火到 0，之后两臂算法完全相同）。` : "");
+
+  lineChart({ el: "c-loss", title: "策略损失", note: "网络策略 vs MCTS 访问分布 · 交叉熵",
+    xLabel: "轮次", series: S("policy_loss"), spans: ruleSpan, yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-vloss", title: "价值损失", note: "预测胜负 · MSE",
+    xLabel: "轮次", series: S("value_loss"), spans: ruleSpan, yFmt: v => fmt(v, 3), xFmt: v => fmt(v, 0) });
+  /* Entropy tracks the policy loss almost exactly on this data (they differ by
+     <0.002 nats after iteration 2), because the cross-entropy against the MCTS
+     targets is H(p_net) + KL(p_mcts||p_net) and the policy head fits its target
+     nearly perfectly. Two visually identical charts side by side look like a
+     duplication bug, so the caption says which quantity is the redundant one and
+     why -- the KL gap is itself the fit-quality number worth reporting. */
+  const klGap = (() => {
+    const its = A0.iterations || [];
+    if (its.length < 3) return null;
+    const tail = its.slice(2).map(r => r.policy_loss - r.entropy).filter(v => v == v);
+    return tail.length ? Math.max(...tail) : null;
+  })();
+  lineChart({ el: "c-ent", title: "策略熵",
+    note: `上限 ln(${BOARD_N * BOARD_N})=${fmt(Math.log(BOARD_N * BOARD_N), 2)}，越低越有主见` +
+      (klGap != null ? ` · 与左上图几乎重合：两者只差 ≤${fmt(klGap, 3)}，即网络已把 MCTS 分布学到位` : ""),
+    xLabel: "轮次", series: S("entropy"), spans: ruleSpan, yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-ev", title: "价值头 explained variance", note: "1 = 完美预测胜负，0 = 等于瞎猜",
+    xLabel: "轮次", series: S("explained_var"), spans: ruleSpan,
+    annotY: { y: 0, label: "0 = 无预测力" }, yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0) });
+  /* Length goes UP over training here, not down: on 9x9 both sides learn to
+     block, so games run longer and end in a filled board. The draw rate next to
+     it is what makes that legible -- and it is also the ceiling on how much any
+     head-to-head can separate two arms, since a drawn game carries half a
+     point regardless of who played better. */
+  lineChart({ el: "c-len", title: "平均对局手数", note: `棋盘共 ${BOARD_N * BOARD_N} 格，下满即平局`,
+    xLabel: "轮次", series: S("avg_len"), spans: ruleSpan, yFmt: v => fmt(v, 0), xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-draw", title: "自我对弈平局率",
+    note: `平局产生全零的价值目标 —— 这条线走高 = 训练信号在稀释（上一趟 9×9 一到中期就是这样）`,
+    xLabel: "轮次", yMin: 0, yMax: 100,
+    annotY: { y: 50, label: "50%：一半对局不再产生胜负信号" },
+    series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t],
+      points: its(arms[t]).map(r => [r.iter, 100 * r.draws / (r.games || 1)]) })),
+    spans: ruleSpan, yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-beta", title: "规则先验权重 β", note: "只影响搜索先验，不进训练目标",
+    xLabel: "轮次", yMin: 0,
+    series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t],
+      points: its(arms[t]).map(r => [r.iter, r.beta]) })),
+    yFmt: v => fmt(v, 2), xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-lr", title: "学习率", note: "两条臂共用同一套阶梯衰减",
+    xLabel: "轮次", yMin: 0,
+    series: [{ name: "学习率", color: "var(--s4)",
+      points: its(A0).map(r => [r.iter, r.lr * 1000]) }],
+    yFmt: v => v === 0 ? "0" : fmt(v, 1) + "e−3", xFmt: v => fmt(v, 0) });
+}
+
+/* ---------- evaluation ---------- */
+{
+  const evs = m => m.evals || [];
+  function wrSeries(oppPrefix) {
+    return arm_order.map(t => ({
+      name: ARM_LABEL[t] || t, color: ARM_COLOR[t], marker: true,
+      points: evs(arms[t]).map(e => {
+        const mm = e.matches.find(x => x.opponent.startsWith(oppPrefix));
+        return mm ? [e.iter, mm.win_rate * 100] : null;
+      }).filter(Boolean),
+    }));
+  }
+  const mpA = lastEval(A0, "pure-mcts");
+  const rgA = lastEval(A0, "rule-greedy");
+  document.getElementById("evalLede").textContent =
+    `每 ${evalEvery(A0)} 轮拿当时的网络去打三个固定基线：随机落子、规则贪心（就是冷启动用的那套战术启发式，无搜索）、以及经典 pure-MCTS（均匀先验 + 随机 rollout 估值）。` +
+    `评估时两条臂都关掉规则先验、关掉探索噪声，测的是网络本身。胜率按"胜 + 0.5×平"计，双方轮流执黑以抵消先手优势。` +
+    `随机落子和 pure-MCTS 自带随机性，每局都不一样；规则贪心是确定性的，所以对它的每点 ${(rgA && rgA.games) || ""} 局其实只有 2 局不同的棋（黑白各一），` +
+    `胜负结论可信，但别把局数当独立样本读——这也是下一节两条臂互打时要随机开局的原因。`;
+
+  lineChart({ el: "c-wr-mcts", title: `对 pure-MCTS 基线胜率`,
+    note: mpA ? `${mpA.opponent} · 每点 ${mpA.games} 局轮流先手` : "",
+    xLabel: "轮次", yMin: 0, yMax: 100, series: wrSeries("pure-mcts"),
+    annotY: { y: 50, label: "50% = 平手" }, yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-wr-rule", title: "对规则贪心基线胜率", note: "冷启动所用的战术启发式本身（无搜索）",
+    xLabel: "轮次", yMin: 0, yMax: 100, series: wrSeries("rule-greedy"),
+    annotY: { y: 50, label: "50% = 平手" }, yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+
+  /* The round-robin Elo is computed once, after the last iteration, so a report
+     built from a run still in progress has no elo entries at all -- drop the
+     card rather than draw an empty axis. */
+  const eloTags = [...new Set(arm_order.flatMap(t => (arms[t].elo || []).map(e => e.iter)))].sort((a, b) => a - b);
+  if (!eloTags.length) {
+    document.getElementById("c-elo").remove();
+  } else {
+    /* This ladder plays every pair from the empty board, and AZPlayer takes the
+       argmax of the visit counts with no root noise -- so the N games of a pair
+       are one game per colour assignment, repeated. That is why pairs come back
+       0-0-6 and why neighbouring checkpoints can land on identical ratings. It
+       still orders the checkpoints, but its resolution is 2 games' worth, not
+       N. The cross-arm fit below plays randomised openings and is the one to
+       read for a calibrated number. */
+    const ed = A0.elo_detail || {};
+    const gpp = ed.games_per_pair || 0;
+    const tmp = ed.temp || 0;
+    barChart({ el: "c-elo", title: "检查点循环赛 Elo",
+      note: `各检查点两两对局，初始权重锚定为 0`
+        + (gpp ? ` · 每对 ${gpp} 局、每手 ${ed.sims || A0.cfg.eval_sims} 次模拟` : "")
+        + (tmp ? ` · 温度 ${tmp} 采样` : ""),
+      xLabel: "检查点（轮次）",
+      series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t] })),
+      groups: eloTags.map(it => ({ label: it === 0 ? "初始" : "第" + it + "轮",
+        vals: arm_order.map(t => { const e = (arms[t].elo || []).find(x => x.iter === it); return e ? e.elo : null; }) })),
+      yFmt: v => fmt(v, 0) });
+    const en = document.createElement("p");
+    en.className = "card-note";
+    if (tmp > 0) {
+      /* with sampling temperature the pair games are genuinely distinct, so
+         the ladder has real resolution: BT Fisher info near p=0.5 gives
+         se ~= 347/sqrt(games per player) */
+      const nPlayers = Math.max(...arm_order.map(t => (arms[t].elo || []).length));
+      const se = 347 / Math.sqrt(Math.max(1, nPlayers - 1) * (gpp || 1));
+      en.textContent = `本次循环赛的落子带温度 ${tmp} 采样，每对 ${gpp} 局互不相同，`
+        + `拟合分辨率约 ±${fmt(se, 0)} Elo —— 小于这个差距的相邻检查点排名可以互换。`;
+    } else {
+      en.textContent = "这张图只用来看顺序。臂内对局都从空盘开始、落子取访问数最大值，"
+        + (gpp ? `所以每对 ${gpp} 局里实际只有 2 局互不相同（黑白各一次）；` : "所以同一对的多局是重复的；")
+        + "相邻检查点因此常常打成全平、拿到一样的分数。要看带误差范围的 Elo，"
+        + (CROSS && (CROSS.elo || []).length
+          ? "看下面把两条臂放进同一个循环赛、并用随机开局的联合拟合。"
+          : "需要跑臂间对打（随机开局）。");
+    }
+    document.getElementById("c-elo").appendChild(en);
+  }
+
+  const tacIters = [...new Set(arm_order.flatMap(t => (arms[t].tactical || []).map(e => e.iter)))].sort((a, b) => a - b);
+  lineChart({ el: "c-tac", title: "战术题正确率", note: `${(A0.probe_meta || []).length} 个有唯一正解的局面 · 实线 = 网络原始输出，虚线 = 加 MCTS 搜索后`,
+    xLabel: "轮次", yMin: 0, yMax: 100, xMin: 0,
+    series: [
+      ...arm_order.map(t => ({ name: `原始策略 · ${ARM_LABEL[t] || t}`, color: ARM_COLOR[t], marker: true,
+        points: (arms[t].tactical || []).map(e => [e.iter, e.raw_acc * 100]) })),
+      { name: "加 MCTS（两臂平均）", color: "var(--s3)", dash: true, deemph: true,
+        points: tacIters.map(it => {
+          const vs = arm_order.map(t => (arms[t].tactical || []).find(e => e.iter === it))
+            .filter(Boolean).map(e => e.mcts_acc * 100);
+          return vs.length ? [it, vs.reduce((a, b) => a + b, 0) / vs.length] : null;
+        }).filter(Boolean) },
+    ],
+    yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+
+  /* rolling anchor ladder: at each eval the current net plays the K most
+     recent checkpoints with a small sampling temperature, so every game is
+     distinct and the score is a real estimate. Unlike the fixed baselines this
+     measurement never saturates: above 50% against the newest anchor = still
+     improving. Runs from before phase 2 have no anchors field -- drop the card. */
+  {
+    const anyAnchor = arm_order.some(t => (arms[t].anchors || []).length);
+    if (!anyAnchor) {
+      document.getElementById("c-anchor").remove();
+    } else {
+      const a0 = arm_order.flatMap(t => arms[t].anchors || [])[0];
+      const se2 = a => {   /* 2 SE of the mean score over a.games, in pp */
+        const n = a.games, p = a.score;
+        if (!n || n < 2) return null;
+        const v = (a.win * (1 - p) * (1 - p) + a.draw * (0.5 - p) * (0.5 - p)
+                   + a.loss * p * p) / (n - 1);
+        return 200 * Math.sqrt(v / n);
+      };
+      const series = [];
+      arm_order.forEach(t => {
+        const an = arms[t].anchors || [];
+        const gaps = [...new Set(an.map(a => a.iter - a.vs_iter))].sort((x, y) => x - y);
+        if (!gaps.length) return;
+        /* two series per arm at most: the newest anchor (the "am I still
+           improving" needle) and the oldest tracked one for scale */
+        const pick = gaps.length > 1 ? [gaps[0], gaps[gaps.length - 1]] : [gaps[0]];
+        pick.forEach((g, gi) => {
+          const rows = an.filter(a => a.iter - a.vs_iter === g);
+          series.push({
+            name: (arm_order.length > 1 ? (ARM_LABEL[t] || t) + " · " : "")
+              + `对 ${g} 轮前的检查点`,
+            color: ARM_COLOR[t], dash: gi > 0, deemph: gi > 0, marker: true,
+            points: rows.map(a => [a.iter, a.score * 100]),
+            err: rows.map(se2),
+          });
+        });
+      });
+      lineChart({ el: "c-anchor", title: "对最近锚点检查点的得分率",
+        note: `每点 ${a0.games} 局 · 温度 ${a0.temp} 采样（局局不同）· 每手 ${a0.sims} 次模拟 · 竖线 = 2 个标准误`,
+        xLabel: "轮次", yMin: 0, yMax: 100,
+        annotY: { y: 50, label: "50% = 与锚点持平，仍高于它 = 仍在变强", below: true },
+        series, yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+    }
+  }
+
+  /* graded tactics: the single 4/4 curve saturates by iteration 5; the tiers
+     (T1 win/block now, T2 open four, T3 VCF) fall at different times, so this
+     is the chart that still moves late in training. Old runs have no tier_acc. */
+  {
+    const hasTier = (A0.tactical || []).some(e => e.tier_acc);
+    if (!hasTier) {
+      document.getElementById("c-tac-tier").remove();
+    } else {
+      const TIER_LABEL = { 1: "T1 成五/封五", 2: "T2 活四攻防", 3: "T3 连续冲四" };
+      const tiers = [...new Set((A0.tactical || []).flatMap(e => Object.keys(e.tier_acc || {})))].sort();
+      const series = tiers.flatMap((k, i) => {
+        const rows = (A0.tactical || []).filter(e => e.tier_acc && e.tier_acc[k]);
+        return [
+          { name: TIER_LABEL[k] || `tier ${k}`, color: `var(--s${i + 1})`, marker: true,
+            points: rows.map(e => [e.iter, e.tier_acc[k].raw * 100]) },
+          { name: (TIER_LABEL[k] || k) + "·+MCTS", color: `var(--s${i + 1})`,
+            dash: true, deemph: true,
+            points: rows.map(e => [e.iter, e.tier_acc[k].mcts * 100]) },
+        ];
+      });
+      const n0 = (A0.tactical.find(e => e.tier_acc) || {}).tier_acc || {};
+      lineChart({ el: "c-tac-tier",
+        title: "战术题正确率 · 按难度分档" + (arm_order.length > 1 ? `（${ARM_LABEL[arm_order[0]]}）` : ""),
+        note: Object.entries(n0).map(([k, v]) => `T${k}: ${v.n} 题`).join(" · ")
+          + " · 实线 = 原始策略，虚线 = 加 MCTS",
+        xLabel: "轮次", yMin: 0, yMax: 100, xMin: 0,
+        series, yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+    }
+  }
+
+  const nb = document.getElementById("baselineNote");
+  nb.textContent = "";
+  const b = document.createElement("b"); b.textContent = "关于基线的说明：";
+  nb.appendChild(b);
+  nb.appendChild(document.createTextNode(
+    `pure-MCTS 用均匀先验 + 随机 rollout 估值，在五子棋这种"随机对局几乎必然乱成一团"的游戏里，rollout 估值信号很弱，` +
+    `所以它并不是一个强对手 —— 它的价值在于是一个完全不学习、强度固定的参照物，用来确认棋力增长来自训练而非评估噪声。` +
+    `规则贪心基线更"硬"：它总能立刻成五、立刻封堵，网络要赢它必须学会构造多重威胁。每个数据点局数不多（${(lastEval(A0,"pure-mcts")||{}).games || "—"} 局），` +
+    `所以单点有采样噪声，应当看趋势而不是抠单点。`));
+}
+
+/* ---------- A/B efficiency ---------- */
+{
+  const sec = document.getElementById("abSection");
+  if (!B) {
+    sec.remove();
+  } else {
+    /* --- ① head-to-head: the two arms' checkpoints played against each other.
+       The fixed baselines saturate (rule-greedy 8-0, pure-MCTS 12-0, probes 4/4
+       within ~15 iterations), so from there on they cannot separate the arms at
+       all. Arm vs arm never saturates. Data comes from a separate pass over the
+       saved checkpoints; if it is missing this whole block is removed. */
+    function renderH2H() {
+      const blk = document.getElementById("h2hBlock");
+      if (!CROSS || !(CROSS.matched || []).length) {
+        blk.remove();
+        /* no head-to-head data: drop the "②" numbering, there is only one part */
+        const h = document.getElementById("abScoreH");
+        h.childNodes[0].textContent = "对固定基线的综合棋力分 ";
+        return;
+      }
+      const [a1, a2] = CROSS.arms;
+      const L1 = ARM_LABEL[a1] || a1, L2 = ARM_LABEL[a2] || a2;
+      const cf = CROSS.cfg || {};
+
+      document.getElementById("h2hLede").textContent =
+        `每个训练轮次上，让两条臂的同轮检查点直接对打：${cf.match_openings} 个随机开局（各 ${cf.open_plies} 手），` +
+        `每个开局双方各先手一次，共 ${cf.match_games} 局，每手 ${cf.match_sims} 次模拟、β=0。` +
+        `开局要随机是因为这里的 MCTS 落子是确定性的（取访问数最大者、根节点不加噪声），` +
+        `从空棋盘开打的话同色同一份权重每次都会走出完全一样的棋，局数再多也只是同一局的复制。` +
+        `纵轴是${L2} 的得分率：50% 是持平，高于 50% 说明在同样的算力预算下它更强。` +
+        `右图把两条臂的检查点放进同一个循环赛做 Bradley-Terry Elo 拟合，于是所有检查点落在同一把尺子上。`;
+
+      /* matched pairs. Titles stay short: these two cards are half-width, and
+         the arm labels are long enough to wrap the caption onto a third line.
+         Each point is only match_openings observations, so it carries a 2-SE
+         whisker computed from that point's own per-opening scores -- without it
+         a reader would take every wiggle in this line for a real change. */
+      const mp = CROSS.matched.filter(m => m.score != null);
+      const se2Of = ps => {
+        if (!ps || ps.length < 2) return null;
+        const mu = ps.reduce((s, x) => s + x, 0) / ps.length;
+        const v = ps.reduce((s, x) => s + (x - mu) * (x - mu), 0) / (ps.length - 1);
+        return 200 * Math.sqrt(v / ps.length);      /* 2 SE, in percentage points */
+      };
+      lineChart({ el: "c-h2h", title: "同轮次直接对局 · 规则臂得分率",
+        note: `每点 ${cf.match_openings} 开局 / ${cf.match_games} 局 · 竖线 = 2 个标准误`,
+        xLabel: "轮次", yMin: 0, yMax: 100,
+        annotY: { y: 50, label: "50% 持平", below: true },
+        spans: B.cfg.rule_iters ? [{ x0: 0, x1: B.cfg.rule_iters, color: "var(--s2)",
+                                     label: "β 退火区间", labelAt: "span-end" }] : [],
+        series: [{ name: L2, color: ARM_COLOR[a2], marker: true,
+                   points: mp.map(m => [m.iter, m.score * 100]),
+                   err: mp.map(m => se2Of(m.pair_scores)) }],
+        yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+
+      /* How precisely can this fit convert Elo into iterations? Computed here
+         because both the equivalence table and its note need it: it decides
+         whether a row's saving is distinguishable from zero at all.
+         Bradley-Terry Fisher information per observation near p=0.5 is
+         (ln10/400)^2/4, giving se ≈ 347/sqrt(N). Count N in openings, not games:
+         the two colour-swapped games of one opening are the same position, not
+         independent draws. That happens to land within ~8% of the matched-
+         difference sd measured by Monte-Carlo on a round-robin of this exact
+         shape -- the two ratings are correlated through the shared anchor, which
+         makes their difference tighter than sqrt(2) × a single rating. */
+      const el2 = CROSS.elo || [];
+      const eloSe = 347 / Math.sqrt(Math.max(1, el2.length - 1) *
+                                    (cf.elo_openings || cf.elo_games || 1));
+      /* Elo per iteration over the back half of arm 1's curve, as a straight
+         least-squares slope. A last-two-points difference would be at the mercy
+         of one noisy checkpoint, and the back half is the right window because
+         that is where the conversion is worst-conditioned: the curve flattens,
+         so a fixed Elo error buys more iterations. */
+      const c1p = el2.filter(e => e.arm === a1).sort((x, y) => x.iter - y.iter);
+      let slope = null;
+      {
+        const back = c1p.slice(Math.floor(c1p.length / 2));
+        if (back.length >= 2) {
+          const mx = back.reduce((s, p) => s + p.iter, 0) / back.length;
+          const my = back.reduce((s, p) => s + p.elo, 0) / back.length;
+          const sxy = back.reduce((s, p) => s + (p.iter - mx) * (p.elo - my), 0);
+          const sxx = back.reduce((s, p) => s + (p.iter - mx) * (p.iter - mx), 0);
+          if (sxx > 0 && sxy > 0) slope = sxy / sxx;
+        }
+      }
+      const itSe = slope ? eloSe / slope : null;
+
+      /* joint Elo, one line per arm on a shared scale. The 0 anchor is already
+         labelled on the reference line, so the note does not repeat it. The
+         ±eloSe band goes in the caption: without it the two lines' 100-Elo
+         mid-training crossings read as real, and they are inside the fit's own
+         resolution. */
+      lineChart({ el: "c-h2h-elo", title: "同一循环赛内的联合 Elo",
+        note: `${el2.length} 个检查点 · 每对 ${cf.elo_games} 局 · 分辨率 ±${fmt(eloSe, 0)}`,
+        xLabel: "轮次", annotY: { y: 0, label: "随机初始权重" },
+        spans: B.cfg.rule_iters ? [{ x0: 0, x1: B.cfg.rule_iters, color: "var(--s2)" }] : [],
+        series: CROSS.arms.map(t => ({
+          name: ARM_LABEL[t] || t, color: ARM_COLOR[t], marker: true,
+          points: el2.filter(e => e.arm === t).map(e => [e.iter, e.elo]) })),
+        yFmt: v => fmt(v, 0), xFmt: v => fmt(v, 0) });
+
+      /* equivalence table: rules@k is worth how many iterations of pure?
+         eq == null means the rules checkpoint is stronger than every pure
+         checkpoint — the most interesting row, so keep it and say so. */
+      const eq = CROSS.equivalence || [];
+      const lastIt1 = Math.max(...(el2.filter(e => e.arm === a1).map(e => e.iter)), 0);
+      const elo1 = el2.filter(e => e.arm === a1).map(e => e.elo);
+      const maxElo1 = elo1.length ? Math.max(...elo1) : null;
+      const tbl = document.getElementById("h2hTable");
+      const thead = document.createElement("thead"), hr = document.createElement("tr");
+      /* The saving column carries its own error bar in the header. On this data
+         every row's saving is smaller than ±itSe, so a green "+0.9 轮" next to a
+         red "−10.8 轮" would invent a story out of fit noise. */
+      [`${L2} 的检查点`, "联合 Elo", `相当于${L1} 的第几轮`,
+       itSe ? `省下的轮次（换算误差 ±${fmt1(itSe)}）` : "省下的轮次"].forEach(t => {
+        const th = document.createElement("th"); th.textContent = t; hr.appendChild(th);
+      });
+      thead.appendChild(hr); tbl.appendChild(thead);
+      const tb = document.createElement("tbody");
+      if (!eq.length) {
+        const tr = document.createElement("tr"), td = document.createElement("td");
+        td.colSpan = 4;
+        td.textContent = "没有可换算的检查点。";
+        tr.appendChild(td); tb.appendChild(tr);
+      }
+      eq.forEach(e => {
+        const tr = document.createElement("tr");
+        const ev = e[`${a1}_iters_equivalent`];
+        const c0 = document.createElement("td"); c0.textContent = `第 ${e.iter} 轮`;
+        const c1 = document.createElement("td"); c1.className = "num";
+        c1.textContent = (e.elo >= 0 ? "+" : "") + fmt(e.elo, 0);
+        const c2 = document.createElement("td"); c2.className = "num";
+        c2.textContent = ev == null ? `超过第 ${lastIt1} 轮（未达到）` : `第 ${fmt1(ev)} 轮`;
+        const c3 = document.createElement("td"); c3.className = "num";
+        const sv = e.iters_saved;
+        /* sv == null: stronger than every checkpoint of arm 1, so the saving is
+           positive but has no upper bound — the last row has no headroom left
+           to measure it in, so say that instead of printing "> 0". */
+        const gap = lastIt1 - e.iter;
+        /* Colour only when the number is bigger than the conversion error --
+           otherwise it is grey with the reason on hover. The unbounded rows
+           (stronger than every arm-1 checkpoint) need the same test on the Elo
+           scale: clearing the top of the curve by 13 Elo inside a ±32 Elo fit is
+           not a ">20 iterations saved" result, so the cell says so inline as
+           well -- "> 20 轮" is the largest number in the column and would
+           otherwise be read as the headline. */
+        const margin = sv == null && maxElo1 != null ? e.elo - maxElo1 : null;
+        const weak = itSe != null && (sv != null
+          ? Math.abs(sv) < itSe
+          : margin != null && margin < eloSe);
+        c3.textContent = sv == null
+          ? (gap > 0.05 ? `> ${fmt1(gap)} 轮${weak ? "（误差内）" : ""}` : "已超出曲线，无法换算")
+          : sv > 0.05 ? `+${fmt1(sv)} 轮` : sv < -0.05 ? `${fmt1(sv)} 轮` : "持平";
+        c3.className = "num " + (weak ? "wk"
+          : sv == null || sv > 0.05 ? "ok" : sv < -0.05 ? "no" : "");
+        if (weak) c3.title = sv != null
+          ? `小于换算误差 ±${fmt1(itSe)} 轮，与 0 分不开`
+          : `只比${L1} 的最高分高 ${fmt(margin, 0)} Elo，在 ±${fmt(eloSe, 0)} Elo 的拟合误差之内`;
+        [c0, c1, c2, c3].forEach(c => tr.appendChild(c));
+        tb.appendChild(tr);
+      });
+      tbl.appendChild(tb);
+
+      /* honest read: mean score rate over the annealing window vs after it */
+      const rIt = B.cfg.rule_iters || 0;
+      const inAnn = mp.filter(m => m.iter <= rIt), after = mp.filter(m => m.iter > rIt);
+      const nGames = mp.reduce((s, m) => s + m.games, 0);
+      /* The independent unit is an opening, not a game: the two games of an
+         opening are the same position played from both sides, and MCTS play
+         here is deterministic (argmax of visit counts, no root noise), so games
+         within an opening are not independent draws. A coin model over nGames
+         would overstate the precision by sqrt(2) at best -- and by sqrt(games
+         per position) if the openings were dropped altogether. So take the
+         standard error over the per-opening scores that the eval records. */
+      const poolOf = a => a.flatMap(m => m.pair_scores || []);
+      const pool = poolOf(mp);
+      const avg = a => a.length ? a.reduce((s, x) => s + x, 0) / a.length : null;
+      /* standard error of the mean of one pool of per-opening scores */
+      const seOf = a => {
+        if (a.length < 2) return null;
+        const mu = avg(a);
+        const v = a.reduce((s, x) => s + (x - mu) * (x - mu), 0) / (a.length - 1);
+        return Math.sqrt(v / a.length);
+      };
+      const havePairs = pool.length >= 2;
+      const mIn = havePairs ? avg(poolOf(inAnn)) : avg(inAnn.map(m => m.score));
+      const mAf = havePairs ? avg(poolOf(after)) : avg(after.map(m => m.score));
+      const mAll = havePairs ? avg(pool) : avg(mp.map(m => m.score));
+      let sig = 0, unit = `${nGames} 局`;
+      if (havePairs) {
+        sig = seOf(pool);
+        const nOpen = (mp[0].openings || 0);
+        unit = `${pool.length} 个开局对（${nOpen} 个随机开局 × 双方各先手一次 × ${mp.length} 个轮次 = ${nGames} 局）`;
+      } else if (nGames) {
+        sig = 0.5 / Math.sqrt(nGames);   /* fallback: fair-coin band over games */
+      }
+      const savedVals = eq.map(e => e.iters_saved).filter(v => v != null);
+      const medSaved = median(savedVals);
+      let read;
+      if (mAll == null) {
+        read = "没有可用的同轮对局数据。";
+      } else if (Math.abs(mAll - 0.5) < 2 * sig) {
+        read = `全程 ${unit}，${L2} 的总得分率 ${pct(mAll, 1)}，与 50% 的差距在 2 个标准误（±${pct(2 * sig, 1)}）之内 —— ` +
+          `在这个规模上测不出规则冷启动的优势。`;
+      } else if (mAll > 0.5) {
+        read = `全程 ${unit}，${L2} 的总得分率 ${pct(mAll, 1)}，高出 50% 超过 2 个标准误（±${pct(2 * sig, 1)}）—— ` +
+          `同样的算力预算下规则臂确实更强。`;
+      } else {
+        read = `全程 ${unit}，${L2} 的总得分率只有 ${pct(mAll, 1)}，低于 50% 超过 2 个标准误（±${pct(2 * sig, 1)}）—— ` +
+          `注入的先验反而拖慢了这条臂。`;
+      }
+      if (mIn != null && mAf != null) {
+        /* Is the in-anneal vs after-anneal gap bigger than its own noise? Two
+           independent means, so the difference's standard error is the root of
+           the sum of squares. Falls back to a flat 5 pp when there are no
+           per-opening scores to estimate it from. */
+        const sIn = havePairs ? seOf(poolOf(inAnn)) : null;
+        const sAf = havePairs ? seOf(poolOf(after)) : null;
+        const sd = (sIn != null && sAf != null)
+          ? 2 * Math.sqrt(sIn * sIn + sAf * sAf) : 0.05;
+        read += ` 分段看：退火区间内（前 ${rIt} 轮）${pct(mIn, 1)}，退火结束之后 ${pct(mAf, 1)}。` +
+          (mIn - mAf > sd
+            ? `优势集中在注入阶段，退火后被纯 self-play 追平 —— 这正是"只提前、不改终点"的形态。`
+            : mAf - mIn > sd
+              ? `优势出现在退火之后，说明早期注入留下的不只是当时的强度，还有更好的表示。`
+              : `两段之差在噪声范围内（±${pct(sd, 1)}），分不出先后。`);
+      }
+      if (medSaved != null) {
+        /* Quote the median saving and its own error bar in the same breath. Two
+           adjacent sentences let a reader lift "省下 3.8 轮" out of a number that
+           is ±7.4 -- so if the error swamps it, say that instead of the number.
+           eloSe / slope / itSe are computed above the table, which needs them to
+           decide whether a row's saving is worth colouring at all. */
+        const band = itSe ? `换算误差 ±${fmt1(itSe)} 轮：Elo 拟合本身分辨率约 ±${fmt(eloSe, 0)} Elo，` +
+                            `而${L1} 曲线后半段每轮只涨约 ${fmt(slope, 0)} Elo` : "";
+        if (itSe && Math.abs(medSaved) < itSe) {
+          read += ` 换算成轮次：中位数${medSaved > 0 ? "+" : "−"}${fmt1(Math.abs(medSaved))} 轮，` +
+            `比换算误差本身还小（${band}），所以这把尺子上还读不出确定的轮次差 —— ` +
+            `上表里逐行的正负号同样都在这条误差之内，已置灰。`;
+        } else {
+          read += ` 换算成轮次：中位数${medSaved > 0 ? "省下约 " : "落后约 "}${fmt1(Math.abs(medSaved))} 轮自我对弈` +
+            `（每轮约 ${fmt(A0.cfg.games_per_iter, 0)} 局、${fmt1(medIterMin())} 分钟` +
+            (band ? `；${band}` : "") + `）。这一列要按趋势读，不要按小数位读。`;
+        }
+      }
+      const nb = document.getElementById("h2hNote");
+      nb.textContent = "";
+      const bb = document.createElement("b"); bb.textContent = "直接对局怎么读：";
+      nb.appendChild(bb);
+      nb.appendChild(document.createTextNode(read));
+    }
+
+    /* median wall-clock minutes per iteration, for the "N iterations saved" note */
+    function median(a) {
+      if (!a.length) return null;
+      const v = a.slice().sort((x, y) => x - y), h = v.length >> 1;
+      return v.length % 2 ? v[h] : (v[h - 1] + v[h]) / 2;
+    }
+    function medIterMin() {
+      return median((A0.iterations || []).map(r => (r.selfplay_s + r.train_s) / 60)) || 0;
+    }
+
+    /* the composite "strength score": win rate vs the two non-trivial baselines,
+       plus tactical accuracy — all measured with beta forced to 0 on both arms. */
+    function score(m) {
+      const out = [];
+      for (const e of (m.evals || [])) {
+        const rg = e.matches.find(x => x.opponent.startsWith("rule-greedy"));
+        const mc = e.matches.find(x => x.opponent.startsWith("pure-mcts"));
+        const tc = (m.tactical || []).find(t => t.iter === e.iter);
+        const vals = [rg && rg.win_rate, mc && mc.win_rate, tc && tc.raw_acc].filter(v => v != null);
+        if (!vals.length) continue;
+        out.push({ iter: e.iter, cum_games: e.cum_games, elapsed_s: e.elapsed_s,
+                   s: vals.reduce((a, b) => a + b, 0) / vals.length * 100 });
+      }
+      return out;
+    }
+    const sc = {}; arm_order.forEach(t => { sc[t] = score(arms[t]); });
+
+    document.getElementById("abLede").textContent =
+      `这一节专门回答"冷启动先用规则、再退火到纯 self-play，能不能更快"。两条臂唯一的差别是 β₀（${A0.cfg.beta0} vs ${B.cfg.beta0}），` +
+      `种子、网络、模拟次数、局数、学习率全部相同，评估时都强制 β=0。用两把尺子量：` +
+      `① 两条臂的检查点直接对打 —— 永远不会饱和，是主要证据；② 对固定基线的综合棋力分 —— 直观，但基线很快被打满，只在早期有区分度。`;
+
+    document.getElementById("abScoreLede").textContent =
+      `综合棋力分 = 对规则贪心胜率、对 pure-MCTS 胜率、战术题正确率三者的平均。` +
+      `如果规则冷启动真的有用，规则臂的曲线应该在早期明显位于纯 self-play 之上；如果两条曲线在同一预算下重合，说明规则只是换了条路径、没有省时间。` +
+      `注意这三项都有上限，越到后面越容易同时打满而分不出高下 —— 那之后要看上面第 ① 组数据。`;
+
+    /* ---------- ① head-to-head, from results/gomoku_cross_arm.json ---------- */
+    renderH2H();
+
+    lineChart({ el: "c-ab-wall", title: "综合棋力分 vs 墙钟时间", note: "同一横轴 = 同样的算力预算",
+      xLabel: "分钟", yMin: 0, yMax: 100,
+      series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t], marker: true,
+        points: sc[t].map(p => [p.elapsed_s / 60, p.s]) })),
+      yFmt: v => fmt(v, 0), xFmt: v => fmt(v, 0) });
+    lineChart({ el: "c-ab-games", title: "综合棋力分 vs 自我对弈局数", note: "同一横轴 = 同样的样本量",
+      xLabel: "局数", yMin: 0, yMax: 100,
+      series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t], marker: true,
+        points: sc[t].map(p => [p.cum_games, p.s]) })),
+      yFmt: v => fmt(v, 0), xFmt: v => fmtInt(v) });
+
+    /* how long did each arm need to first reach a given score?
+       compare against the running max so "time to reach X" is monotonic in X —
+       otherwise a noisy dip makes a higher threshold look reached earlier.
+       A threshold already met at the *first* eval point is left-censored: the
+       arm was that strong before anyone looked, so the timestamp is the
+       measurement schedule, not the learning curve. Real data saturates this
+       table hard (both arms clear 80 by iteration 5), so saying so matters more
+       than filling the cell. */
+    function firstReach(pts, thr) {
+      let best = -Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        best = Math.max(best, pts[i].s);
+        if (best >= thr) return { p: pts[i], censored: i === 0 };
+      }
+      return null;
+    }
+    const maxCommon = Math.min(
+      ...arm_order.map(t => Math.max(...sc[t].map(p => p.s), 0)));
+    const thrs = [50, 60, 70, 80, 90].filter(v => v <= maxCommon + 1e-9);
+    const tbl = document.getElementById("abTable");
+    const thead = document.createElement("thead"); const hr = document.createElement("tr");
+    ["首次达到综合棋力分", ...arm_order.map(t => ARM_LABEL[t] || t), "差异"].forEach(t => {
+      const th = document.createElement("th"); th.textContent = t; hr.appendChild(th);
+    });
+    thead.appendChild(hr); tbl.appendChild(thead);
+    const tb = document.createElement("tbody");
+    if (!thrs.length) {
+      const tr = document.createElement("tr"); const td = document.createElement("td");
+      td.colSpan = arm_order.length + 2;
+      td.textContent = "两条臂都还没达到 50 分，无法比较达标速度。";
+      tr.appendChild(td); tb.appendChild(tr);
+    }
+    let nCensored = 0;
+    thrs.forEach(thr => {
+      const tr = document.createElement("tr");
+      const td0 = document.createElement("td"); td0.textContent = thr + " 分"; tr.appendChild(td0);
+      const hits = arm_order.map(t => firstReach(sc[t], thr));
+      hits.forEach(h => {
+        const td = document.createElement("td"); td.className = "num";
+        td.textContent = h
+          ? (h.censored ? "≤ " : "") + `${fmt1(h.p.elapsed_s / 60)} 分钟 / ${fmtInt(h.p.cum_games)} 局`
+          : "未达到";
+        if (h && h.censored) td.title = "首个评估点就已达标，真实时间只知道不晚于此";
+        tr.appendChild(td);
+      });
+      const td = document.createElement("td"); td.className = "num";
+      if (hits.every(Boolean) && hits.length === 2) {
+        if (hits.some(h => h.censored)) {
+          nCensored++;
+          td.textContent = "测不出";
+          td.title = "至少一条臂在首个评估点就已达标，先后无法判定";
+        } else {
+          const d = hits[1].p.elapsed_s - hits[0].p.elapsed_s;
+          td.textContent = (d < 0 ? "规则臂快 " : d > 0 ? "规则臂慢 " : "持平 ") + fmt1(Math.abs(d) / 60) + " 分钟";
+          td.className = "num " + (d < 0 ? "ok" : d > 0 ? "no" : "");
+        }
+      } else td.textContent = "—";
+      tr.appendChild(td);
+      tb.appendChild(tr);
+    });
+    tbl.appendChild(tb);
+
+    /* honest read of the result: use the lowest threshold that actually has
+       resolution, i.e. one neither arm had already cleared at its first eval. */
+    const finalA = sc[arm_order[0]].slice(-1)[0], finalB = sc[arm_order[1]].slice(-1)[0];
+    let early = null, hA = null, hB = null;
+    for (const thr of thrs) {
+      const a = firstReach(sc[arm_order[0]], thr), b2 = firstReach(sc[arm_order[1]], thr);
+      if (a && b2 && !a.censored && !b2.censored) { early = thr; hA = a.p; hB = b2.p; break; }
+    }
+    let read;
+    if (hA && hB) {
+      const dmin = (hB.elapsed_s - hA.elapsed_s) / 60;
+      const frac = Math.abs(dmin) / (hA.elapsed_s / 60);
+      if (frac < 0.15) {
+        read = `在这个规模上，两条臂到达 ${early} 分的时间只差 ${fmt1(Math.abs(dmin))} 分钟（约 ${pct(frac, 0)}），` +
+          `落在评估噪声范围内 —— 规则冷启动没有带来可测量的加速。`;
+      } else if (dmin < 0) {
+        read = `规则臂到达 ${early} 分比纯 self-play 早 ${fmt1(-dmin)} 分钟（${pct(frac, 0)}），` +
+          `即在这个规模上冷启动确实提供了可测量的早期加速。`;
+      } else {
+        read = `规则臂到达 ${early} 分反而比纯 self-play 晚 ${fmt1(dmin)} 分钟（${pct(frac, 0)}）—— ` +
+          `注入的先验把早期搜索推向了它自己偏好的下法，反而压缩了探索多样性。`;
+      }
+      if (nCensored) read += ` 表里低于 ${early} 分的那几档两条臂在首个评估点（第 ${(A0.evals[0] || {}).iter} 轮）就都过了，先后测不出来。`;
+    } else if (nCensored) {
+      read = `这张表在本次数据上没有分辨率：每一档都至少有一条臂在首个评估点（第 ${(A0.evals[0] || {}).iter} 轮，` +
+        `约 ${fmt1((sc[arm_order[0]][0] || {}).elapsed_s / 60)} 分钟）就已达标，` +
+        `所以"谁先到"只反映评估的采样间隔，不反映学得快慢。终局分数 ${fmt(finalA.s, 0)} vs ${fmt(finalB.s, 0)}。` +
+        `要在这条路上得到答案，得把 AZ_EVAL_EVERY 调密、或换用不会饱和的臂间对打。`;
+    } else {
+      read = `本次两条臂尚未在同一阈值上都达标，只能比较终局分数（${fmt(finalA.s, 0)} vs ${fmt(finalB.s, 0)}）。`;
+    }
+    const nb = document.getElementById("abNote");
+    nb.textContent = "";
+    const b = document.createElement("b"); b.textContent = "怎么读这组对比：";
+    nb.appendChild(b);
+    nb.appendChild(document.createTextNode(
+      read +
+      ` 需要注意几点局限：(1) 每个评估点只打 ${(lastEval(A0, "pure-mcts") || {}).games || "少量"} 局，单点噪声不小，应看趋势；` +
+      `(2) 这是 ${A0.cfg.board}×${A0.cfg.board} 小棋盘、${A0.cfg.iters} 轮的短程实验，AlphaZero 原始规模下的结论未必相同 —— ` +
+      `棋盘越大、状态空间越稀疏，冷启动先验的价值通常越高；` +
+      `(3) β₀=${B.cfg.beta0} 和 ${B.cfg.rule_iters} 轮退火只是一组超参，更激进或更保守的注入方式可能给出不同答案。` +
+      ` 结论适用于"这套配置下"，不是对该想法的一般性判决。`));
+  }
+}
+
+/* ---------- tactical probe heatmaps ---------- */
+(function () {
+  const armBtns = document.getElementById("probeArmBtns");
+  const iterBtns = document.getElementById("probeIterBtns");
+  const srcBtns = document.getElementById("probeSrcBtns");
+  const grid = document.getElementById("probeGrid");
+  let arm = arm_order[0];
+  let iter = null;
+  let src = "policy";   // "policy" = raw net output, "visits" = after MCTS
+
+  function recs() { return arms[arm].tactical || []; }
+  function curRec() {
+    const rs = recs();
+    if (!rs.length) return null;
+    const hit = rs.find(r => r.iter === iter);
+    return hit || rs[rs.length - 1];
+  }
+
+  function drawProbe(cv, board, probs, good, chosen) {
+    const ctx = cv.getContext("2d");
+    const W = cv.width, H = cv.height, pad = 16, cell = (W - pad * 2) / (BOARD_N - 1);
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = css("--board"); ctx.fillRect(0, 0, W, H);
+    const pmax = Math.max(...probs, 1e-9);
+    // heat cells
+    for (let r = 0; r < BOARD_N; r++) for (let c = 0; c < BOARD_N; c++) {
+      const a = r * BOARD_N + c;
+      if (board[a] !== 0) continue;
+      const alpha = Math.pow(probs[a] / pmax, 0.6) * 0.85;
+      if (alpha < 0.02) continue;
+      ctx.fillStyle = css("--heat");
+      ctx.globalAlpha = alpha;
+      ctx.fillRect(pad + c * cell - cell / 2, pad + r * cell - cell / 2, cell, cell);
+      ctx.globalAlpha = 1;
+    }
+    ctx.strokeStyle = css("--board-line"); ctx.lineWidth = 0.8;
+    for (let i = 0; i < BOARD_N; i++) {
+      const v = pad + i * cell;
+      ctx.beginPath(); ctx.moveTo(pad, v); ctx.lineTo(W - pad, v); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(v, pad); ctx.lineTo(v, H - pad); ctx.stroke();
+    }
+    for (let r = 0; r < BOARD_N; r++) for (let c = 0; c < BOARD_N; c++) {
+      const a = r * BOARD_N + c;
+      if (board[a] === 0) continue;
+      const x = pad + c * cell, y = pad + r * cell, R = cell * 0.4;
+      ctx.beginPath(); ctx.arc(x, y, R, 0, Math.PI * 2);
+      ctx.fillStyle = board[a] === 1 ? css("--stone-b") : css("--stone-w");
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,.3)"; ctx.lineWidth = 1; ctx.stroke();
+    }
+    // correct answers: red ring
+    for (const a of good) {
+      const x = pad + (a % BOARD_N) * cell, y = pad + Math.floor(a / BOARD_N) * cell;
+      ctx.strokeStyle = css("--bad-text"); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, y, cell * 0.44, 0, Math.PI * 2); ctx.stroke();
+    }
+    // model's pick: green square if right, grey if wrong
+    const x = pad + (chosen % BOARD_N) * cell, y = pad + Math.floor(chosen / BOARD_N) * cell;
+    ctx.strokeStyle = good.includes(chosen) ? css("--good") : css("--text-2");
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(x - cell * 0.36, y - cell * 0.36, cell * 0.72, cell * 0.72);
+  }
+
+  function render() {
+    const rec = curRec();
+    grid.textContent = "";
+    if (!rec) return;
+    (arms[arm].probe_meta || []).forEach((pm, i) => {
+      const p = rec.positions[i];
+      if (!p) return;
+      const heat = src === "visits" ? p.visits : p.policy;
+      const chosen = src === "visits" ? p.mcts_move : p.raw_move;
+      const ok = src === "visits" ? p.mcts_ok : p.raw_ok;
+      const fig = document.createElement("figure"); fig.className = "card";
+      const cap = document.createElement("figcaption");
+      const t = document.createElement("span"); t.className = "fig-title"; t.textContent = pm.id;
+      cap.appendChild(t);
+      const n = document.createElement("span"); n.className = "fig-note";
+      n.textContent = "价值 " + fmt(p.value, 2);
+      cap.appendChild(n);
+      fig.appendChild(cap);
+      const cv = document.createElement("canvas");
+      cv.width = 260; cv.height = 260; cv.className = "board";
+      fig.appendChild(cv);
+      const d = document.createElement("p"); d.className = "probe-desc"; d.textContent = pm.desc;
+      fig.appendChild(d);
+      const v = document.createElement("p"); v.className = "probe-verdict";
+      const sp = document.createElement("span");
+      sp.className = ok ? "ok" : "no";
+      sp.textContent = (ok ? "✓ 答对" : "✗ 答错") + `（${src === "visits" ? "加 MCTS" : "原始策略"}）`;
+      v.appendChild(sp);
+      v.appendChild(document.createTextNode(
+        `　落点 (${Math.floor(chosen / BOARD_N)},${chosen % BOARD_N})`));
+      fig.appendChild(v);
+      const v2 = document.createElement("p"); v2.className = "probe-verdict alt";
+      v2.textContent = src === "visits"
+        ? (p.raw_ok ? "不搜索也答对" : "不搜索则答错")
+        : (p.mcts_ok ? "加 MCTS 后同样答对" : "加 MCTS 后仍答错");
+      fig.appendChild(v2);
+      grid.appendChild(fig);
+      drawProbe(cv, pm.board, heat, pm.good, chosen);
+    });
+  }
+
+  function buildArm() {
+    armBtns.textContent = "";
+    if (arm_order.length < 2) return;
+    arm_order.forEach(t => {
+      const b = document.createElement("button");
+      b.className = "ctl-btn"; b.type = "button"; b.textContent = ARM_LABEL[t] || t;
+      b.setAttribute("aria-pressed", String(t === arm));
+      b.addEventListener("click", () => { arm = t; buildArm(); buildIter(); render(); });
+      armBtns.appendChild(b);
+    });
+  }
+  function buildIter() {
+    iterBtns.textContent = "";
+    const rs = recs();
+    if (iter === null || !rs.some(r => r.iter === iter)) iter = rs.length ? rs[rs.length - 1].iter : null;
+    rs.forEach(r => {
+      const b = document.createElement("button");
+      b.className = "ctl-btn"; b.type = "button";
+      b.textContent = r.iter === 0 ? "训练前" : "第 " + r.iter + " 轮";
+      b.setAttribute("aria-pressed", String(r.iter === iter));
+      b.addEventListener("click", () => { iter = r.iter; buildIter(); render(); });
+      iterBtns.appendChild(b);
+    });
+  }
+  function buildSrc() {
+    srcBtns.textContent = "";
+    [["policy", "原始策略输出（不搜索）"], ["visits", "MCTS 访问分布（搜索后）"]].forEach(([k, lab]) => {
+      const b = document.createElement("button");
+      b.className = "ctl-btn"; b.type = "button"; b.textContent = lab;
+      b.setAttribute("aria-pressed", String(k === src));
+      b.addEventListener("click", () => { src = k; buildSrc(); render(); });
+      srcBtns.appendChild(b);
+    });
+  }
+  document.addEventListener("themechange", render);
+  buildArm(); buildIter(); buildSrc(); render();
+})();
+
+/* ---------- GPU + throughput ---------- */
+{
+  const gpuSeries = key => arm_order.map(t => ({
+    name: ARM_LABEL[t] || t, color: ARM_COLOR[t],
+    points: (arms[t].gpu || []).map(g => [g.t / 60, key === "mem" ? g.mem / 1024 : g[key]]),
+  }));
+  const g0 = A0.gpu || [];
+  const peakU = g0.length ? Math.max(...g0.map(g => g.util)) : 0;
+  const meanU = g0.length ? g0.reduce((a, g) => a + g.util, 0) / g0.length : 0;
+  const peakP = g0.length ? Math.max(...g0.map(g => g.power)) : 0;
+  const itsA = A0.iterations || [];
+  const spTot = itsA.reduce((a, r) => a + r.selfplay_s, 0);
+  const trTot = itsA.reduce((a, r) => a + r.train_s, 0);
+
+  const perCard = Math.round(A0.workers / Math.max(1, new Set(A0.gpus).size));
+  const gpu0n = A0.gpus.filter(g => g === 0).length;
+  document.getElementById("gpuLede").textContent =
+    `监控的是 GPU 0（训练所在卡，同时也跑 ${gpu0n} 个 self-play worker）。AlphaZero 的自我对弈阶段是 MCTS 树搜索，` +
+    `瓶颈在 Python/CPU 侧，GPU 只在每个批量评估时被打满，所以曲线呈锯齿状 —— 平均 ${fmt(meanU, 0)}%、峰值 ${fmt(peakU, 0)}%。` +
+    `这是树搜索类 RL 的正常形态，和 CIFAR 那种纯前馈训练把卡持续压满不同。` +
+    `全程自我对弈占 ${pct(spTot / (spTot + trTot), 0)} 的时间、梯度更新占 ${pct(trTot / (spTot + trTot), 0)}，` +
+    `这也是为什么把 self-play 分到 ${A0.workers} 个进程 / ${new Set(A0.gpus).size} 张卡上是主要的加速手段。`;
+
+  lineChart({ el: "c-gpu-util", title: "GPU 0 利用率", note: "逐秒采样，图中按等长时间窗取均值 · 灰带 = 评估阶段",
+    xLabel: "分钟", yMin: 0, yMax: 100, series: gpuSeries("util"),
+    spans: (A0.eval_spans || []).map((s, i) => ({ x0: s[0] / 60, x1: s[1] / 60,
+      color: "var(--text-2)", opacity: 0.10, label: i === 0 ? "评估" : null })),
+    yFmt: v => fmt(v, 0) + "%", xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-gpu-power", title: "GPU 0 功耗", note: "上限 500 W",
+    xLabel: "分钟", yMin: 0, series: gpuSeries("power"),
+    yFmt: v => fmt(v, 0) + " W", xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-gpu-mem", title: "GPU 0 显存", note: `共 96 GB · 训练 + ${gpu0n} 个 self-play worker`,
+    xLabel: "分钟", yMin: 0, series: gpuSeries("mem"),
+    yFmt: v => fmt(v, 1) + " GB", xFmt: v => fmt(v, 0) });
+  lineChart({ el: "c-time", title: "每轮自我对弈耗时", note: `梯度更新固定约 ${fmt(trTot / Math.max(1, itsA.length), 0)}s / 轮，不随棋局长度变化`,
+    xLabel: "轮次", yMin: 0,
+    series: arm_order.map(t => ({ name: ARM_LABEL[t] || t, color: ARM_COLOR[t],
+      points: (arms[t].iterations || []).map(r => [r.iter, r.selfplay_s]) })),
+    yFmt: v => fmt(v, 0) + "s", xFmt: v => fmt(v, 0) });
+}
+
+/* ---------- config table + method note ---------- */
+{
+  const c = A0.cfg, n = A0.net;
+  const rows = [
+    ["棋盘 / 胜利条件", `${c.board}×${c.board}，连成 ${c.n_in_row} 子获胜（无禁手规则）`],
+    ["网络结构", `${n.planes} 输入平面 → ${n.channels} 通道 stem → ${n.blocks} 个残差块（${n.norm}）→ 策略头(${c.board * c.board}) + 价值头(tanh)，共 ${(n.params / 1e6).toFixed(2)}M 参数`],
+    ["输入平面", "① 当前执子方的子 ② 对手的子 ③ 对手上一手位置 ④ 是否黑方 —— 始终以「待落子方」视角编码"],
+    ["MCTS", `每手 ${c.sims} 次模拟，PUCT c=${c.c_puct}，根节点加 Dirichlet(${c.dirichlet[0]}) 噪声 ε=${c.dirichlet[1]}`],
+    ["探索温度", `前 ${c.temp_moves} 手按访问计数概率采样，之后取访问最多的一手`],
+    ["每轮规模", `${c.games_per_iter} 局自我对弈 → ${c.train_steps} 步更新（batch ${c.batch}），回放池上限 ${fmtInt(c.buffer)} 局面`],
+    ["数据增强", "采样时对每个 batch 施加 8 种二面体对称（旋转 ×4 × 翻转 ×2）"],
+    ["优化器", `AdamW lr=${c.lr}（50%/75% 进度各衰减一半），weight decay 1e-4，梯度裁剪 5.0`],
+    ["规则冷启动", arm_order.map(t => `${ARM_LABEL[t]}：β₀=${arms[t].cfg.beta0}` + (arms[t].cfg.beta0 > 0 ? `，前 ${arms[t].cfg.rule_iters} 轮线性退火到 0` : "")).join("；")],
+    ["并行", `${A0.workers} 个 self-play 进程分布在 GPU ${[...new Set(A0.gpus)].join("/")}` +
+      `（每卡 ${Math.round(A0.workers / Math.max(1, new Set(A0.gpus).size))} 个），梯度更新在 ${A0.device}`],
+    ["随机种子", `${c.seed}` + (B ? "（两臂相同）" : "")],
+  ];
+  /* The head-to-head section is a separate pass over the saved checkpoints with
+     its own knobs, and a reader who wants to reproduce that number will not find
+     it in the trainer's config. */
+  if (CROSS && (CROSS.matched || []).length) {
+    const x = CROSS.cfg || {};
+    rows.push(["臂间对打（另一趟）",
+      `同轮对局：${x.match_openings} 个随机开局（各 ${x.open_plies} 手）× 双方各先手一次 = ${x.match_games} 局，每手 ${x.match_sims} 次模拟；` +
+      `联合 Elo：${(CROSS.elo || []).length} 个检查点全循环赛，每对 ${x.elo_openings} 开局 / ${x.elo_games} 局，每手 ${x.elo_sims} 次模拟；` +
+      `两者都强制 β=0、开局种子 ${x.seed}`]);
+  }
+  const tbl = document.getElementById("cfgTable");
+  const thead = document.createElement("thead"); const hr = document.createElement("tr");
+  ["项", "配置"].forEach(t => { const th = document.createElement("th"); th.textContent = t; hr.appendChild(th); });
+  thead.appendChild(hr); tbl.appendChild(thead);
+  const tb = document.createElement("tbody");
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    r.forEach(v => { const td = document.createElement("td"); td.textContent = v; tr.appendChild(td); });
+    tb.appendChild(tr);
+  });
+  tbl.appendChild(tb);
+
+  const mn = document.getElementById("methodNote");
+  /* the injection story only belongs on a page where some arm injected: on a
+     pure single-arm run the whole paragraph describes a thing that never ran */
+  const ruleArm = arm_order.map(t => arms[t]).find(m => (m.cfg || {}).beta0 > 0);
+  if (!ruleArm) {
+    mn.remove();
+  } else {
+    mn.textContent = "";
+    const b1 = document.createElement("b"); b1.textContent = "规则先验是怎么注入的、为什么不算作弊：";
+    mn.appendChild(b1);
+    mn.appendChild(document.createTextNode(
+      `冷启动阶段，MCTS 每次展开一个叶节点时，把网络先验和一个手写战术先验混合：P = (1-β)·P_网络 + β·P_规则。` +
+      `这个战术先验只会三件事 —— 能成五就成五、对手要成五就堵、否则偏向已有棋子附近和中心。` +
+      `关键是：训练目标始终是 MCTS 的访问计数与真实对局胜负，规则从不直接作为监督标签，` +
+      `而 β 在第 ${ruleArm.cfg.rule_iters} 轮就退火到 0，之后与纯 AlphaZero 完全一致。评估时都强制 β=0。` +
+      `所以它改变的是"早期探索往哪里走"，而不是"最终学到什么"。`));
+  }
+}
+
+/* footer */
+document.getElementById("foot").textContent =
+  `生成于 ${node.date} · 数据来源：${node.host} 容器内训练输出（` +
+  arm_order.map(t => `gomoku_${t}.json`).join(" / ") + " / " +
+  (CROSS ? "gomoku_cross_arm.json / " : "") + `gpu_log_gomoku_*.csv）· ` +
+  `镜像 ${node.image} · 图表为手写 SVG/Canvas，无外部依赖，本页可直接分发。`;
+</script>
+</body>
+</html>

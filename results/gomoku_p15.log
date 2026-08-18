@@ -1,0 +1,64 @@
+[selftest] rules + encoding + rule oracle OK
+/usr/local/lib/python3.12/dist-packages/torch/__init__.py:1614: UserWarning: Please use the new API settings to control TF32 behavior, such as torch.backends.cudnn.conv.fp32_precision = 'tf32' or torch.backends.cuda.matmul.fp32_precision = 'ieee'. Old settings, e.g, torch.backends.cuda.matmul.allow_tf32 = True, torch.backends.cudnn.allow_tf32 = True, allowTF32CuDNN() and allowTF32CuBLAS() will be deprecated after Pytorch 2.9. Please see https://pytorch.org/docs/main/notes/cuda.html#tensorfloat-32-tf32-on-ampere-and-later-devices (Triggered internally at /opt/pytorch/pytorch/aten/src/ATen/Context.cpp:45.)
+  _C._set_float32_matmul_precision(precision)
+[resume] loaded results/gomoku_ckpt_p15/iter025.pt; replay buffer starts empty, optimizer moments reset
+/usr/local/lib/python3.12/dist-packages/torch/optim/lr_scheduler.py:274: UserWarning: Detected call of `lr_scheduler.step()` before `optimizer.step()`. In PyTorch 1.1.0 and later, you should call them in the opposite order: `optimizer.step()` before `lr_scheduler.step()`.  Failure to do this will result in PyTorch skipping the first value of the learning rate schedule. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+  warnings.warn(
+[init] Gomoku 15x15 / 5-in-a-row | net 10.53M | 12 workers on GPUs [0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2] | beta0=0.0 rule_iters=20 | tag=p15
+[resume] carried 25 iterations / 5 evals from results/gomoku_p15.json
+[p15 iter 26/40] b=0.000 loss 2.6029 (p 2.4239 v 0.1790) ent 2.423 ev +0.820 | len 15.3 B/W/D 1278/66/0 | sp 703s tr 116s
+[p15 iter 27/40] b=0.000 loss 2.5813 (p 2.2929 v 0.2884) ent 2.292 ev +0.711 | len 20.6 B/W/D 1182/162/0 | sp 997s tr 115s
+[p15 iter 28/40] b=0.000 loss 2.5363 (p 2.2114 v 0.3249) ent 2.210 ev +0.674 | len 24.3 B/W/D 1145/199/0 | sp 1213s tr 115s
+[p15 iter 29/40] b=0.000 loss 2.5072 (p 2.1866 v 0.3205) ent 2.185 ev +0.678 | len 22.9 B/W/D 1206/137/1 | sp 1203s tr 115s
+[p15 iter 30/40] b=0.000 loss 2.4924 (p 2.1864 v 0.3060) ent 2.185 ev +0.692 | len 21.3 B/W/D 1240/103/1 | sp 1216s tr 115s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [anchor] vs iter015: 11W-1L-0D
+  [anchor] vs iter020: 9W-3L-0D
+  [anchor] vs iter025: 9W-3L-0D
+  [probe] raw 10/10  mcts 10/10  (T1:100%/100% T2:100%/100% T3:100%/100%)
+[p15 iter 31/40] b=0.000 loss 2.4745 (p 2.1765 v 0.2979) ent 2.175 ev +0.701 | len 20.9 B/W/D 1245/99/0 | sp 1087s tr 115s
+[p15 iter 32/40] b=0.000 loss 2.4841 (p 2.1887 v 0.2954) ent 2.187 ev +0.702 | len 21.3 B/W/D 1243/98/3 | sp 1153s tr 115s
+[p15 iter 33/40] b=0.000 loss 2.4909 (p 2.2005 v 0.2903) ent 2.199 ev +0.707 | len 20.5 B/W/D 1254/87/3 | sp 1186s tr 115s
+[p15 iter 34/40] b=0.000 loss 2.4926 (p 2.2021 v 0.2905) ent 2.201 ev +0.706 | len 20.1 B/W/D 1250/92/2 | sp 1224s tr 116s
+[p15 iter 35/40] b=0.000 loss 2.4990 (p 2.2048 v 0.2942) ent 2.204 ev +0.702 | len 19.6 B/W/D 1243/98/3 | sp 1128s tr 116s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [anchor] vs iter020: 6W-6L-0D
+  [anchor] vs iter025: 11W-1L-0D
+  [anchor] vs iter030: 10W-2L-0D
+  [probe] raw 10/10  mcts 10/10  (T1:100%/100% T2:100%/100% T3:100%/100%)
+[p15 iter 36/40] b=0.000 loss 2.4992 (p 2.2047 v 0.2945) ent 2.203 ev +0.702 | len 20.4 B/W/D 1240/103/1 | sp 1087s tr 116s
+[p15 iter 37/40] b=0.000 loss 2.5042 (p 2.2118 v 0.2924) ent 2.210 ev +0.704 | len 20.0 B/W/D 1260/83/1 | sp 1122s tr 116s
+[p15 iter 38/40] b=0.000 loss 2.5042 (p 2.2126 v 0.2916) ent 2.211 ev +0.704 | len 20.6 B/W/D 1247/92/5 | sp 1231s tr 116s
+[p15 iter 39/40] b=0.000 loss 2.5029 (p 2.2159 v 0.2869) ent 2.214 ev +0.709 | len 19.1 B/W/D 1253/90/1 | sp 1070s tr 116s
+[p15 iter 40/40] b=0.000 loss 2.5046 (p 2.2137 v 0.2908) ent 2.212 ev +0.705 | len 21.2 B/W/D 1237/103/4 | sp 1258s tr 115s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [anchor] vs iter025: 9W-3L-0D
+  [anchor] vs iter030: 9W-3L-0D
+  [anchor] vs iter035: 4W-8L-0D
+  [probe] raw 10/10  mcts 10/10  (T1:100%/100% T2:100%/100% T3:100%/100%)
+[final] harder baseline
+  vs pure-mcts-8000: 12W-0L-0D
+[final] Elo round-robin
+  iter000 vs iter010: 0-8-0
+  iter000 vs iter015: 0-8-0
+  iter000 vs iter025: 0-8-0
+  iter000 vs iter030: 0-8-0
+  iter000 vs iter040: 0-8-0
+  iter010 vs iter015: 3-5-0
+  iter010 vs iter025: 3-5-0
+  iter010 vs iter030: 0-8-0
+  iter010 vs iter040: 0-8-0
+  iter015 vs iter025: 3-5-0
+  iter015 vs iter030: 1-7-0
+  iter015 vs iter040: 0-8-0
+  iter025 vs iter030: 2-6-0
+  iter025 vs iter040: 0-8-0
+  iter030 vs iter040: 5-3-0
+  elo: [('iter000', 0.0), ('iter010', 1063.5), ('iter015', 1144.1), ('iter025', 1220.5), ('iter030', 1607.0), ('iter040', 1639.2)]
+wrote results/gomoku_p15.json

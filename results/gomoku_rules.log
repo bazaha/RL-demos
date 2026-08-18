@@ -1,0 +1,115 @@
+[selftest] rules + encoding + rule oracle OK
+/usr/local/lib/python3.12/dist-packages/torch/__init__.py:1614: UserWarning: Please use the new API settings to control TF32 behavior, such as torch.backends.cudnn.conv.fp32_precision = 'tf32' or torch.backends.cuda.matmul.fp32_precision = 'ieee'. Old settings, e.g, torch.backends.cuda.matmul.allow_tf32 = True, torch.backends.cudnn.allow_tf32 = True, allowTF32CuDNN() and allowTF32CuBLAS() will be deprecated after Pytorch 2.9. Please see https://pytorch.org/docs/main/notes/cuda.html#tensorfloat-32-tf32-on-ampere-and-later-devices (Triggered internally at /opt/pytorch/pytorch/aten/src/ATen/Context.cpp:45.)
+  _C._set_float32_matmul_precision(precision)
+[init] Gomoku 9x9 / 5-in-a-row | net 2.92M | 8 workers on GPUs [0, 0, 1, 1, 2, 2, 3, 3] | beta0=0.6 rule_iters=20 | tag=rules
+  [probe] raw 0/4  mcts 2/4
+[rules iter 1/50] b=0.600 loss 4.9975 (p 4.0974 v 0.9001) ent 4.073 ev +0.099 | len 22.6 B/W/D 193/191/0 | sp 64s tr 11s
+[rules iter 2/50] b=0.570 loss 4.2585 (p 3.6335 v 0.6250) ent 3.630 ev +0.361 | len 18.6 B/W/D 255/125/4 | sp 81s tr 11s
+[rules iter 3/50] b=0.540 loss 3.8989 (p 3.4150 v 0.4838) ent 3.411 ev +0.475 | len 21.7 B/W/D 255/110/19 | sp 92s tr 11s
+[rules iter 4/50] b=0.510 loss 3.7057 (p 3.2773 v 0.4284) ent 3.273 ev +0.529 | len 18.0 B/W/D 258/115/11 | sp 86s tr 11s
+[rules iter 5/50] b=0.480 loss 3.5442 (p 3.1563 v 0.3879) ent 3.152 ev +0.567 | len 19.0 B/W/D 296/73/15 | sp 89s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 4W-0L-4D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 6/50] b=0.450 loss 3.4222 (p 3.0610 v 0.3612) ent 3.058 ev +0.580 | len 22.3 B/W/D 282/70/32 | sp 92s tr 11s
+[rules iter 7/50] b=0.420 loss 3.2980 (p 2.9605 v 0.3375) ent 2.957 ev +0.591 | len 24.2 B/W/D 279/65/40 | sp 98s tr 11s
+[rules iter 8/50] b=0.390 loss 3.2023 (p 2.8888 v 0.3135) ent 2.886 ev +0.600 | len 27.1 B/W/D 292/36/56 | sp 103s tr 11s
+[rules iter 9/50] b=0.360 loss 3.1368 (p 2.8341 v 0.3026) ent 2.830 ev +0.598 | len 27.6 B/W/D 284/41/59 | sp 103s tr 11s
+[rules iter 10/50] b=0.330 loss 3.0840 (p 2.7893 v 0.2947) ent 2.787 ev +0.594 | len 28.0 B/W/D 268/55/61 | sp 103s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 11/50] b=0.300 loss 3.0438 (p 2.7522 v 0.2916) ent 2.749 ev +0.586 | len 29.1 B/W/D 268/53/63 | sp 113s tr 11s
+[rules iter 12/50] b=0.270 loss 3.0112 (p 2.7221 v 0.2891) ent 2.719 ev +0.574 | len 32.3 B/W/D 249/54/81 | sp 108s tr 11s
+[rules iter 13/50] b=0.240 loss 2.9708 (p 2.6909 v 0.2799) ent 2.688 ev +0.569 | len 33.5 B/W/D 246/44/94 | sp 109s tr 11s
+[rules iter 14/50] b=0.210 loss 2.9516 (p 2.6747 v 0.2768) ent 2.672 ev +0.560 | len 35.8 B/W/D 235/52/97 | sp 116s tr 11s
+[rules iter 15/50] b=0.180 loss 2.9258 (p 2.6601 v 0.2657) ent 2.658 ev +0.558 | len 38.7 B/W/D 232/31/121 | sp 118s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 16/50] b=0.150 loss 2.8984 (p 2.6388 v 0.2596) ent 2.636 ev +0.556 | len 34.1 B/W/D 254/32/98 | sp 113s tr 11s
+[rules iter 17/50] b=0.120 loss 2.8770 (p 2.6228 v 0.2542) ent 2.621 ev +0.553 | len 35.9 B/W/D 235/44/105 | sp 111s tr 11s
+[rules iter 18/50] b=0.090 loss 2.8592 (p 2.6096 v 0.2496) ent 2.608 ev +0.547 | len 41.0 B/W/D 199/57/128 | sp 122s tr 11s
+[rules iter 19/50] b=0.060 loss 2.7606 (p 2.5268 v 0.2339) ent 2.525 ev +0.537 | len 40.7 B/W/D 218/26/140 | sp 121s tr 11s
+[rules iter 20/50] b=0.030 loss 2.6929 (p 2.4788 v 0.2140) ent 2.478 ev +0.523 | len 46.5 B/W/D 177/39/168 | sp 131s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 21/50] b=0.000 loss 2.6600 (p 2.4595 v 0.2005) ent 2.458 ev +0.510 | len 41.8 B/W/D 207/43/134 | sp 107s tr 11s
+[rules iter 22/50] b=0.000 loss 2.6467 (p 2.4584 v 0.1883) ent 2.457 ev +0.500 | len 45.9 B/W/D 186/31/167 | sp 112s tr 11s
+[rules iter 23/50] b=0.000 loss 2.6403 (p 2.4606 v 0.1797) ent 2.459 ev +0.486 | len 44.6 B/W/D 190/32/162 | sp 112s tr 11s
+[rules iter 24/50] b=0.000 loss 2.6231 (p 2.4561 v 0.1670) ent 2.455 ev +0.483 | len 46.5 B/W/D 182/33/169 | sp 111s tr 11s
+[rules iter 25/50] b=0.000 loss 2.6111 (p 2.4585 v 0.1526) ent 2.457 ev +0.489 | len 47.3 B/W/D 181/26/177 | sp 113s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 26/50] b=0.000 loss 2.5966 (p 2.4524 v 0.1441) ent 2.452 ev +0.492 | len 47.4 B/W/D 180/34/170 | sp 113s tr 11s
+[rules iter 27/50] b=0.000 loss 2.5870 (p 2.4499 v 0.1371) ent 2.450 ev +0.491 | len 49.0 B/W/D 165/34/185 | sp 111s tr 11s
+[rules iter 28/50] b=0.000 loss 2.5841 (p 2.4555 v 0.1286) ent 2.455 ev +0.490 | len 47.8 B/W/D 174/28/182 | sp 107s tr 11s
+[rules iter 29/50] b=0.000 loss 2.5786 (p 2.4576 v 0.1210) ent 2.457 ev +0.484 | len 49.3 B/W/D 164/30/190 | sp 115s tr 11s
+[rules iter 30/50] b=0.000 loss 2.5744 (p 2.4583 v 0.1162) ent 2.458 ev +0.488 | len 48.2 B/W/D 172/30/182 | sp 107s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 31/50] b=0.000 loss 2.5660 (p 2.4492 v 0.1168) ent 2.449 ev +0.496 | len 42.1 B/W/D 213/27/144 | sp 104s tr 11s
+[rules iter 32/50] b=0.000 loss 2.5475 (p 2.4343 v 0.1132) ent 2.434 ev +0.493 | len 46.4 B/W/D 182/31/171 | sp 110s tr 11s
+[rules iter 33/50] b=0.000 loss 2.5426 (p 2.4306 v 0.1120) ent 2.430 ev +0.492 | len 48.5 B/W/D 175/29/180 | sp 112s tr 11s
+[rules iter 34/50] b=0.000 loss 2.5346 (p 2.4216 v 0.1130) ent 2.421 ev +0.484 | len 48.9 B/W/D 179/24/181 | sp 114s tr 11s
+[rules iter 35/50] b=0.000 loss 2.5332 (p 2.4205 v 0.1127) ent 2.420 ev +0.479 | len 47.0 B/W/D 164/46/174 | sp 114s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 36/50] b=0.000 loss 2.5344 (p 2.4223 v 0.1121) ent 2.422 ev +0.485 | len 47.3 B/W/D 176/31/177 | sp 107s tr 11s
+[rules iter 37/50] b=0.000 loss 2.5359 (p 2.4250 v 0.1110) ent 2.425 ev +0.486 | len 45.3 B/W/D 172/43/169 | sp 106s tr 11s
+[rules iter 38/50] b=0.000 loss 2.5218 (p 2.4163 v 0.1056) ent 2.416 ev +0.503 | len 49.4 B/W/D 160/32/192 | sp 119s tr 11s
+[rules iter 39/50] b=0.000 loss 2.5177 (p 2.4127 v 0.1051) ent 2.413 ev +0.500 | len 50.2 B/W/D 149/41/194 | sp 112s tr 11s
+[rules iter 40/50] b=0.000 loss 2.5126 (p 2.4063 v 0.1063) ent 2.406 ev +0.496 | len 49.4 B/W/D 165/29/190 | sp 116s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 41/50] b=0.000 loss 2.5170 (p 2.4127 v 0.1043) ent 2.413 ev +0.496 | len 51.1 B/W/D 149/33/202 | sp 116s tr 11s
+[rules iter 42/50] b=0.000 loss 2.5272 (p 2.4229 v 0.1043) ent 2.423 ev +0.479 | len 50.5 B/W/D 155/34/195 | sp 117s tr 11s
+[rules iter 43/50] b=0.000 loss 2.5410 (p 2.4413 v 0.0997) ent 2.441 ev +0.480 | len 54.4 B/W/D 134/32/218 | sp 117s tr 11s
+[rules iter 44/50] b=0.000 loss 2.5420 (p 2.4423 v 0.0998) ent 2.442 ev +0.485 | len 49.2 B/W/D 157/41/186 | sp 109s tr 11s
+[rules iter 45/50] b=0.000 loss 2.5471 (p 2.4486 v 0.0985) ent 2.449 ev +0.480 | len 47.2 B/W/D 173/33/178 | sp 112s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 8W-0L-0D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[rules iter 46/50] b=0.000 loss 2.5481 (p 2.4551 v 0.0930) ent 2.455 ev +0.494 | len 49.1 B/W/D 150/40/194 | sp 110s tr 11s
+[rules iter 47/50] b=0.000 loss 2.5547 (p 2.4618 v 0.0929) ent 2.462 ev +0.489 | len 50.7 B/W/D 150/33/201 | sp 110s tr 11s
+[rules iter 48/50] b=0.000 loss 2.5596 (p 2.4672 v 0.0923) ent 2.467 ev +0.488 | len 50.4 B/W/D 153/36/195 | sp 111s tr 11s
+[rules iter 49/50] b=0.000 loss 2.5690 (p 2.4756 v 0.0934) ent 2.476 ev +0.484 | len 47.5 B/W/D 167/36/181 | sp 109s tr 11s
+[rules iter 50/50] b=0.000 loss 2.5727 (p 2.4805 v 0.0921) ent 2.480 ev +0.483 | len 52.4 B/W/D 145/30/209 | sp 112s tr 11s
+  [eval] vs random: 8W-0L-0D
+  [eval] vs rule-greedy: 4W-0L-4D
+  [eval] vs pure-mcts-400: 12W-0L-0D
+  [probe] raw 4/4  mcts 4/4
+[final] harder baseline
+  vs pure-mcts-1000: 12W-0L-0D
+[final] Elo round-robin
+  iter000 vs iter010: 0-6-0
+  iter000 vs iter020: 0-6-0
+  iter000 vs iter030: 0-6-0
+  iter000 vs iter040: 0-6-0
+  iter000 vs iter050: 0-6-0
+  iter010 vs iter020: 0-6-0
+  iter010 vs iter030: 0-6-0
+  iter010 vs iter040: 0-3-3
+  iter010 vs iter050: 0-3-3
+  iter020 vs iter030: 3-0-3
+  iter020 vs iter040: 0-3-3
+  iter020 vs iter050: 0-3-3
+  iter030 vs iter040: 0-0-6
+  iter030 vs iter050: 0-0-6
+  iter040 vs iter050: 0-0-6
+  elo: [('iter000', 0.0), ('iter010', 962.4), ('iter020', 1280.5), ('iter030', 1280.5), ('iter040', 1319.8), ('iter050', 1319.8)]
+wrote results/gomoku_rules.json
