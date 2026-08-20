@@ -88,6 +88,7 @@
   }
   .seg button + button { border-left: 1px solid var(--border); }
   .seg button.on { background: var(--s1); color: #fff; }
+  .seg button:disabled { opacity: .4; cursor: default; }
   .btn {
     border: 1px solid var(--border); background: var(--surface-1); color: var(--text-1);
     border-radius: 8px; padding: 6px 14px; font-size: 13px; cursor: pointer;
@@ -143,6 +144,8 @@
           <button data-v="0">原始策略</button>
           <button data-v="128">搜索 128</button>
           <button data-v="400" class="on">搜索 400</button>
+          <button data-v="1600" id="btnL1600" disabled
+                  title="需本地推理服务（scripts/serve_gomoku.py）">搜索 1600</button>
         </span>
       </div>
       <div class="row">
@@ -744,6 +747,65 @@ async function selfTest() {
   return results;
 }
 
+/* ================= optional local inference service =================
+   scripts/serve_gomoku.py reuses the trainer's net + MCTS verbatim; when it
+   answers on localhost the page routes AI moves there (faster, unlocks 1600
+   sims) and silently falls back to the embedded engine if it disappears. */
+const SVC_URL = "http://127.0.0.1:8787";
+let SERVICE = null, svcChip = null;
+
+async function probeService() {
+  try {
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), 1500);
+    const r = await fetch(SVC_URL + "/health", { signal: ctl.signal });
+    clearTimeout(t);
+    if (!r.ok) return;
+    const info = await r.json();
+    if (!info.ok || info.board !== B) return;
+    SERVICE = info;
+    document.getElementById("btnL1600").disabled = false;
+    if (svcChip) {
+      svcChip.textContent = `本地推理服务 ✓ ${info.device} · ${info.ckpt}`;
+      svcChip.className = "chip ok";
+    }
+  } catch (e) { /* no service: embedded engine remains active */ }
+}
+
+function serviceLost(err) {
+  SERVICE = null;
+  console.warn("inference service lost:", err);
+  if (svcChip) {
+    if (!svcChip.isConnected) document.getElementById("chips").appendChild(svcChip);
+    svcChip.textContent = "本地服务断开，已回退内嵌引擎";
+    svcChip.className = "chip err";
+  }
+  const b16 = document.getElementById("btnL1600");
+  b16.disabled = true;
+  if (b16.classList.contains("on")) {
+    document.querySelectorAll("#segLevel button").forEach(x =>
+      x.classList.toggle("on", x.dataset.v === "400"));
+  }
+}
+
+async function serviceMove(sims) {
+  const ctl = new AbortController();
+  const t = setTimeout(() => ctl.abort(), 120000);
+  try {
+    const r = await fetch(SVC_URL + "/move", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ moves: game.moves, sims }), signal: ctl.signal });
+    if (!r.ok) throw new Error("service HTTP " + r.status);
+    const o = await r.json();
+    let visits = null;
+    if (o.visits) {
+      visits = new Float32Array(N_ACT);
+      for (const k in o.visits) visits[+k] = o.visits[k];
+    }
+    return { a: o.move, visits, v: o.value };
+  } finally { clearTimeout(t); }
+}
+
 /* ================= UI ================= */
 const cvs = document.getElementById("bd"), ctx = cvs.getContext("2d");
 const statusEl = document.getElementById("status");
@@ -762,7 +824,7 @@ function level() { return +document.querySelector("#segLevel .on").dataset.v; }
 for (const seg of ["segSide", "segLevel"]) {
   document.getElementById(seg).addEventListener("click", e => {
     const b = e.target.closest("button");
-    if (!b) return;
+    if (!b || b.disabled) return;
     if (seg === "segSide") {
       // side is a new-game setting: mid-game clicks would desync the picker
       // from the actual assignment, so ignore them until the game ends
@@ -814,15 +876,24 @@ async function aiTurn() {
   thinking = true; cvs.classList.add("busy");
   updateButtons();
   const sims = level();
-  setStatus(sims ? `AI 思考中（${sims} 次模拟）…` : "AI 思考中…");
-  progEl.style.visibility = sims ? "visible" : "hidden";
+  const viaSvc = !!SERVICE;
+  setStatus(sims ? `AI 思考中（${viaSvc ? "本地服务 · " : ""}${sims} 次模拟）…` : "AI 思考中…");
+  progEl.style.visibility = sims && !viaSvc ? "visible" : "hidden";
   progFill.style.width = "0%";
   await new Promise(r => setTimeout(r, 30));   // let the UI paint
   try {
     const t0 = performance.now();
-    const { a, visits, v } = await aiMove(game.tree, sims, (done, total) => {
-      progFill.style.width = (100 * done / total).toFixed(1) + "%";
-    });
+    let res = null;
+    if (SERVICE) {
+      try { res = await serviceMove(sims); }
+      catch (e) { serviceLost(e); }
+    }
+    if (!res)
+      res = await aiMove(game.tree, Math.min(sims, 400), (done, total) => {
+        progEl.style.visibility = "visible";
+        progFill.style.width = (100 * done / total).toFixed(1) + "%";
+      });
+    const { a, visits, v } = res;
     const dt = ((performance.now() - t0) / 1000).toFixed(1);
     game.heat = visits;
     // v is from the AI (mover at root) POV; convert to black POV for the bar
@@ -1054,8 +1125,14 @@ window.addEventListener("resize", () => render());
   add(`模型 ${MANIFEST.ckpt} · ${(MANIFEST.bytes / 2 / 1e6).toFixed(1)}M 参数 fp16`);
   add(`推理引擎：${ENGINE === "webgl2" ? "WebGL2" : "CPU（较慢，建议原始策略档）"}`);
   const tchip = add("引擎校验中…");
+  svcChip = add("探测本地推理服务…");
+  probeService().finally(() => {
+    if (!SERVICE && svcChip.isConnected && svcChip.className === "chip")
+      svcChip.remove();   // quiet when there is simply no service
+  });
   document.getElementById("engNote").textContent =
-    "「AI 视角」显示上一手 AI 搜索的访问热度。价值条是模型价值头对当前局面的判断，不是理论最优。";
+    "「AI 视角」显示上一手 AI 搜索的访问热度。价值条是模型价值头对当前局面的判断，不是理论最优。" +
+    "跑起 scripts/serve_gomoku.py 后本页会自动改走本地推理服务（更快，并解锁 1600 档）。";
   document.getElementById("foot").textContent =
     `模型来自 node09 8×H20 上的 AlphaZero 自我对弈训练（40 轮 / 约 10.7 小时 / 终局循环赛 Elo +1,639）。` +
     `本页零依赖、可离线打开；权重 fp16 内嵌，推理与搜索全部在本地浏览器完成。`;
@@ -1090,6 +1167,7 @@ window.__PLAY = {
                      && game.state.board[a] === 0) { applyMove(a); return true; } return false; },
   aiTurn, state: () => game, forward, State, Tree, aiMove,
   cpuTrunk, glTrunk: GL ? GL.trunk : null, heads, encBuf, selfTest,
+  svc: () => SERVICE, probeService,
 };
 </script>
 </body>

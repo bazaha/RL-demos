@@ -14,9 +14,12 @@
 | Phase-2 评估体系（温度采样/锚点池/分级战术题/断点续跑） | ✅ 完成 2026-07-31~08-17 | trainer 内 | 全部向后兼容,老 JSON 照常渲染 |
 | **Phase-1 主线：15×15 单臂 40 轮** | ✅ 完成 2026-08-17 | `report/gomoku15.html` | Elo +1,639;含一次已验证的训练病理与干预,见 §2 |
 | 人机对战页（浏览器内推理+MCTS） | ✅ 完成 2026-08-18 | `report/gomoku_play.html`（28 MB） | 引擎与训练端对拍 ≤2e-6 |
-| 离线硬探针 / VCF 基线 / Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
+| 本地推理服务（Mac MPS / node09 CUDA docker） | ✅ 完成 2026-08-18 | `scripts/serve_gomoku.py` + `run_gomoku_serve.sh` | 页面自动探测,解锁 1600 sims;400 sims ≈ 0.8 s |
+| 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
+| VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
+| Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
 
-当前 node09 上**没有**我们在跑的容器；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
+当前 node09 上跑着一个容器：`az_serve`（推理服务,GPU 0,只绑回环,`docker rm -f az_serve` 可停）；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
 
 ## 2. 训练状态（截至快照）
 
@@ -36,11 +39,11 @@
 
 | 内容 | 位置 | 大小 | 丢了能再生吗 |
 | --- | --- | --- | --- |
-| **p15 检查点 ×9**（iter000-040,每 5 轮） | node09 `~/h20_validation_20260724/results/gomoku_ckpt_p15/` | 362 MB | ❌ 唯一副本,离线评估全靠它 |
+| **p15 检查点 ×9**（iter000-040,每 5 轮） | node09 `~/h20_validation_20260724/results/gomoku_ckpt_p15/` | 362 MB | ❌ 唯一副本（仅 iter040.pt 另有本地副本,供推理服务用,git 忽略） |
 | pure/rules 检查点（9×9 各 11 个） | node09 同目录 `gomoku_ckpt_{pure,rules}/` | 123 MB ×2 | ❌ 唯一副本 |
 | 训练指标 JSON / GPU 日志 / 标定 jsonl | 本地 `results/` 与 node09 双份 | ~2.5 MB | 双份互备 |
 | 网页权重导出（fp16 + manifest + 参考向量） | 本地 `results/web_export/` 与 node09 双份 | 21 MB | ✅ 可由 iter040.pt 重导 |
-| 四份报告 | 本地 `report/` | 29 MB（play 占 28） | ✅ 全部可由 results/ + scripts/ 再生 |
+| 五份报告 | 本地 `report/` | 29 MB（play 占 28） | ✅ 全部可由 results/ + scripts/ 再生 |
 | `gpu_log_gomoku_p15.csv` | 本地（**已合并** part1+part2+尾段,35,197 样本） | 1.0 MB | node09 上仍是三段,本地这份是权威 |
 
 ## 3. 任务账本
@@ -51,16 +54,16 @@
 - [x] 2026-07-25 9×9 双臂训练、臂间对打评估、`report/gomoku.html`（含测量分辨率修正:臂内梯子只排顺序等,见 CLAUDE.md）
 - [x] 2026-07-31 Phase-0 三组标定;Phase-2 评估体系（AZPlayer 温度采样、锚点池、分级战术题+精确校验器、`run_gomoku15_in_container.sh`）;报告模板新卡与单臂容错;战术校验器"对手无成五点"加固（随机化对抗复核 1,794 声明 0 驳倒）
 - [x] 2026-08-17 Phase-1 40 轮全程（含 2 次在线换配置的断点续跑、1 次温度干预）;`AZ_RESUME_ITER` 断点续跑;`report/gomoku15.html`;发射前多智能体审查修掉 5 处报告硬编码
+- [x] 2026-08-19 VCF 求解器基线（`eval_gomoku_vcf_baseline.py`:成五>封五>VCF(5)>拆双威胁>规则贪心,全复用校验器;AZ 侧温度 0.3,每检查点 12 局）。得分曲线 0.00→0.50→0.42→0.42→0.92→0.92→1.00→0.92→1.00:**量程 30 轮**(rule-greedy 只有 15),且有结构——冲锋流期(iter10-15)反而输给纯战术机器(0.42),iter20 起进攻深度超出其 2 手防守视界。强网络的零星败局是长对局末段漏掉 5 深 VCF(iter035 败局:45 手,第 39 手失守),**400 sims 下的 VCF 盲区真实存在但罕见**。`resumed_at` 一行修复同批完成
+- [x] 2026-08-18 离线硬探针（`eval_gomoku_hard_probes.py`,4 族 × 2 向,诱饵与正解分离、构造期校验器证明）。三个发现:①浅战术（≤3 手强制,含毒化冲四）iter5 起 raw 全对、零上钩——饱和是真实能力,此后的 Elo 增长不在浅战术里;②必胜局面的 value 置信是晚熟信号,+0.64(iter5)→+1.00(iter35),iter25_tr 曾出现"下对棋却判 -0.91";③HV2 风格拐点与 iter25 温度干预精确对齐:干预前全走直接双威胁 (5,10),干预后全走保先占毒点 (12,12),两者皆客观胜着。教训:判卷 good 集必须=全部客观胜着（_vcf_starts）,窄判卷曾把更聪明的下法误判成回退
+- [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）
 - [x] 2026-08-18 人机对战页全链路（导出→WebGL2 推理→JS MCTS→对拍验证→交互验证）,抓修 GPU GroupNorm 单遍方差、纹理单元 clobber、aiTurn 回合守卫、执白悔棋死局等 9 个 bug
 
 ### Backlog（按优先级,均可独立开工）
 
-1. **离线硬探针**：现役 10 题第 5 轮就三档全满——正解全在"最显眼的线"上,rusher 策略即可全对,没有区分"注意到线"和"算清强制序列"。做法:新题正解偏离显眼线（诱导长线与必防点分离;首个冲四不在最长线上的 VCF）,只读 `gomoku_ckpt_p15/` 逐检查点评测,模式仿 `eval_gomoku_cross_arm.py`（约 20 分钟容器任务）
-2. **绝对强度基线换代**：pure-MCTS 在 15×15 全档饱和（含 8000 playouts,随机 rollout 在 225 格无估值能力）,正式退役;下一代用 VCF/VCT 求解器（`_vcf_starts` 已是雏形,需加防守方与深度扩展）或外部引擎
-3. **`resumed_at` 一行修**：`train_rl_gomoku_alphazero.py` resume 块里 `M.get("resumed_at", [])` 应改为 `old.get("resumed_at", [])`,否则多次续跑只留最后一条
-4. **Phase-3 吞吐工程**（要在 15×15 之上再上规模才需要）：playout cap randomization（预计 2-3×）、死和裁定、认输阈值、每卡单推理服务进程。实测依据见 CLAUDE.md Phase-0/Phase-1 记录
-5. **Phase-4 冷启动 A/B v2**（如果还关心该问题）：把区分度做出来——每轮局数砍到 1/4 让先验值钱、判据改"到达固定强度的轮次"、≥3 种子测种子间方差;等 Phase-3 把单跑成本压下来再做
-6. （小）人机对战页可选增强：AI 落子随机化（温度档,现在同局面必同手）、开局库、移动端触控优化
+1. **Phase-3 吞吐工程**（要在 15×15 之上再上规模才需要）：playout cap randomization（预计 2-3×）、死和裁定、认输阈值、每卡单推理服务进程。实测依据见 CLAUDE.md Phase-0/Phase-1 记录
+2. **Phase-4 冷启动 A/B v2**（如果还关心该问题）：把区分度做出来——每轮局数砍到 1/4 让先验值钱、判据改"到达固定强度的轮次"、≥3 种子测种子间方差;等 Phase-3 把单跑成本压下来再做
+3. （小）人机对战页可选增强：AI 落子随机化（温度档,现在同局面必同手）、开局库、移动端触控优化
 
 ## 4. 在另一台机器上继续
 
@@ -90,22 +93,13 @@ rsync -az 'node09:~/h20_validation_20260724/results/*.json' 'node09:~/h20_valida
 | 生成 9×9 双臂报告 | `python3 scripts/gen_gomoku_report.py` |
 | 生成 15×15 单臂报告 | `GOMOKU_ARMS=p15 GOMOKU_OUT=report/gomoku15.html python3 scripts/gen_gomoku_report.py` |
 | 人机对战页（权重已导出时） | `python3 scripts/gen_gomoku_play.py` |
+| VCF 基线评测 | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 python scripts/eval_gomoku_vcf_baseline.py` |
+| 硬探针评测 + 可视化 | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 python scripts/eval_gomoku_hard_probes.py`;本地 `python3 scripts/gen_probes_report.py` → `report/gomoku_probes.html` |
+| 推理服务（Mac,需一次 `uv venv` 装 torch,见 CLAUDE.md） | `.venv-serve/bin/python scripts/serve_gomoku.py` |
+| 推理服务（node09 + 隧道） | node09 上 `bash scripts/run_gomoku_serve.sh`;Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` |
 | 人机对战页（从检查点重导权重） | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 CAL_CKPT=results/gomoku_ckpt_p15/iter040.pt python scripts/export_gomoku_web.py`,rsync 回 `results/web_export/` 再本地组装 |
 
 ## 5. git 托管建议
 
-- **必须提交**：`scripts/`、`CLAUDE.md`、`STATUS.md`。这三样 + node09 上的检查点 = 一切可再生
-- **建议提交**：`results/` 里的 JSON/JSONL/CSV（~2.5 MB,训练历史的唯一结构化记录,报告的输入）;`report/index.html`、`gomoku.html`、`gomoku15.html`（<1 MB,直接可看）
-- **别直接提交**：`report/gomoku_play.html`（28 MB）与 `results/web_export/weights_fp16.bin`(21 MB)——要么走 Git LFS,要么按 §4 从 iter040.pt 再生;`data/`（CIFAR,一直不进 git）
-- **检查点不在 git 里**：362+246 MB 且在 node09;如担心节点数据丢失,先 `rsync` 一份 `gomoku_ckpt_p15/` 到可靠存储再说
-
-```gitignore
-# 建议 .gitignore
-data/
-report/gomoku_play.html
-results/web_export/weights_fp16.bin
-results/**/*.pt
-results/gomoku_ckpt_*/
-__pycache__/
-.DS_Store
-```
+- **全部提交**（2026-08-20 起的策略,repo ≈ 100 MB）：`scripts/`、两个 md、`results/` 的 JSON/JSONL/CSV、五份报告（含 28 MB 的对战页）、`web_export/`（含 21 MB 权重）、**`iter040.pt`**（42 MB,最终模型——本地推理服务与页面重导出都靠它,repo 因此脱离 node09 也完整可用）
+- **仍不进 git**：`data/`（CIFAR）;iter040 之外的 8 个检查点（320 MB,只在 node09——如担心节点数据丢失,先 `rsync` 一份 `gomoku_ckpt_p15/` 到可靠存储）;`__pycache__`/`.venv-serve` 等 scratch。实际规则见仓库根的 `.gitignore`

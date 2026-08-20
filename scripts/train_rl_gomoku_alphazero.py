@@ -1176,7 +1176,7 @@ def main():
                 M[k] = [r for r in old.get(k, [])
                         if r.get("iter", 0) <= RESUME_ITER]
             M["phase_start"] = old.get("phase_start", M["phase_start"])
-            M["resumed_at"] = M.get("resumed_at", []) + [
+            M["resumed_at"] = old.get("resumed_at", []) + [
                 {"iter": RESUME_ITER, "time": time.time(),
                  "workers": len(GPUS), "gpus": GPUS}]
             print(f"[resume] carried {len(M['iterations'])} iterations / "

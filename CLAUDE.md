@@ -97,9 +97,9 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 
 - **短对局塌缩是 15×15 的真实陷阱**：手数从 58 塌到 11-14、黑胜 96%、零和棋,持续了第 5-25 轮。原因不是网络不会防守（argmax 评估防守正常、rule-greedy 4-4）,而是 `AZ_TEMP_MOVES=20 > 对局长度`——全程温度采样让白棋每次强制防守都有失手概率,黑棋靠廉价速胜刷数据。**锚点梯子是唯一及时报警的仪表**：5 轮间隔得分 92%→67%→58%→50%（停滞）;固定基线和战术题那时早已饱和
 - **干预与验证**：iter 25 把 `AZ_TEMP_MOVES` 20→10 续跑,3 轮内手数 13→24、白胜 3%→15%、出现 225 手和棋、value 头 ev 从 0.89 回落 0.71（重新有非平凡预测任务）;锚点 5 轮间隔得分回到 75%→83%,循环赛里 iter25→30 一段 +386 Elo（此前 10→25 十五轮才 +157）。**iter 20 那次纯拓扑续跑（buffer 同样清空）没有带来恢复,归因干净**
-- **trainer 有断点续跑**（`AZ_RESUME_ITER=N`）:加载 `iterNNN.pt`、接续 JSON 历史、重建 snapshot 列表、重放 LR 调度;buffer 和优化器动量不持久化。已知小 bug:`resumed_at` 合并时从新 M 读取,多次续跑只留最后一条（改成从 old 读即可）。**`gpu_monitor.sh start` 会截断 CSV**——重启前先 `cp` 出 partN,报告前按时间戳合并
+- **trainer 有断点续跑**（`AZ_RESUME_ITER=N`）:加载 `iterNNN.pt`、接续 JSON 历史、重建 snapshot 列表、重放 LR 调度;buffer 和优化器动量不持久化（`resumed_at` 多次续跑只留最后一条的 bug 已于 2026-08-19 修复）。**`gpu_monitor.sh start` 会截断 CSV**——重启前先 `cp` 出 partN,报告前按时间戳合并
 - **吞吐实测**：28w×48g/卡均 4 = 全卡 100% util,~19-22 min/轮（标定外推的 2 倍慢:15×15 标定只测了每卡 1 进程,大网络下每卡 4 进程的 contention 远超 9×9 的 30%）;12w（3 卡×4,每 worker 112 局）≈ 10-11 min/轮@手数13、~20 min/轮@手数 20——**batch 效应补回了大半 worker 损失,少卡大 batch 在这个网络规模下性价比更高**
-- **评估体系的 15×15 现实**：pure-MCTS 全档（含 8000 playouts）从第 5 轮起 12-0,随机 rollout 在 225 格上没有估值能力,**这条基线可以退役**;分级战术题 iter 5 起三档全满——正解都落在"最显眼的线"上,rusher 策略即可全对,**分档没有把"注意到线"和"算清强制序列"区分开**。待办:离线硬探针（正解偏离显眼线:诱导线与必防点分离、首个冲四不在最长线上的 VCF）,只读检查点,模式同臂间对打。绝对强度基线下一步得用 VCF/VCT 求解器或外部引擎
+- **评估体系的 15×15 现实**：pure-MCTS 全档（含 8000 playouts）从第 5 轮起 12-0,随机 rollout 在 225 格上没有估值能力,**这条基线可以退役**;分级战术题 iter 5 起三档全满——正解都落在"最显眼的线"上,rusher 策略即可全对,**分档没有把"注意到线"和"算清强制序列"区分开**。2026-08-18 的离线硬探针（`eval_gomoku_hard_probes.py` → `results/gomoku_hard_probes.json`,诱饵与正解分离、毒化冲四、构造期校验器证明）给出定论:**浅战术（≤3 手强制）iter5 饱和是真实能力,不是测量伪影**——硬题照样全对零上钩;有梯度的是必胜局面的 value 置信（+0.64@iter5 → +1.00@iter35）和风格（HV2 上干预前全走直接双威胁、干预后全走保先占毒点,拐点与 iter25 精确对齐）。**判卷教训:good 集必须 = 全部客观胜着（`_vcf_starts`）**——第一版用窄判卷把晚期网络更聪明的下法误判成了能力回退。绝对强度基线已于 2026-08-19 换成 **VCF 求解器玩家**（`eval_gomoku_vcf_baseline.py`,决策链:成五>封五>VCF 深度 5>拆双威胁>规则贪心,全部复用校验器）:量程 30 轮、中段有结构（冲锋流期 0.42 输给它,iter20 起 0.92+——网络的连续威胁编织超出其 2 手防守视界）,强检查点的零星败局=长对局末段漏掉 5 深 VCF,是 400 sims 评估的真实盲区。再往上就要 VCT 求解器或外部引擎
 - **风格相克现象**：iter020（冲锋流巅峰）对 iter 25/35 的带温度对局意外顽强（两次 6-6）,而 iter 30/40 对 25/30 都是 9-3——读终局梯子时先想到非传递性,别把单点当"没进步"
 
 ### 臂间对打（`eval_gomoku_cross_arm.py`）
@@ -137,6 +137,14 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **MCTS**：逐语义复刻 trainer 的 `Tree`（PUCT c=3、终局值 mover 视角、backup 逐层翻号——根节点 W/N 已是根方视角,**不要再取负**）。UI 的 `aiTurn` 必须校验"轮到 AI"（悔棋/驱动脚本会制造不是 AI 回合的调用）;执白悔棋可能回滚到 AI 先手局面,悔棋路径要主动re-trigger `aiTurn`
 - **无头验证**：`--use-angle=swiftshader` 下 WebGL 可用但慢 ~50 倍,驱动对局用 sims=0/32,否则 3 手 128 sims 就超 7 分钟（审查 agent 全卡死过一回）;**无头老模式窗口宽度下限 500px**,`--window-size=390` 拍出来的"溢出"是伪影,量 `innerWidth` 确认;DPR 路径用 `--force-device-scale-factor=2` 测
 - 移动端:grid 轨道要 `minmax(0,1fr)` + item `min-width:0`,否则 canvas 固有宽度撑破单列布局
+
+### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
+
+对战页启动时探测 `http://127.0.0.1:8787/health`,有服务就把 AI 落子路由过去（更快,解锁 1600 sims 档）,失败/断开静默回退内嵌引擎。服务端**直接 `import train_rl_gomoku_alphazero` 复用 AZNet/State/Tree/run_sims**,零重实现——注意 import 前必须先 `os.environ.setdefault` 好 `AZ_BOARD/CH/BLOCKS`（模块级全局的老规矩）。stdlib http.server,唯一依赖 torch;CORS 头含 `Access-Control-Allow-Private-Network`（file:// 页面调 localhost 需要）。
+
+- **MacBook**：`uv venv --python 3.12 .venv-serve && uv pip install --python .venv-serve/bin/python torch numpy`,再 `.venv-serve/bin/python scripts/serve_gomoku.py`（系统 python3.14 装不了 torch）。检查点需先 rsync `iter040.pt` 到本地。实测 MPS:400 sims ≈ 0.8 s、1600 ≈ 4.9 s
+- **node09**：`bash scripts/run_gomoku_serve.sh [gpu]` 起 `az_serve` 容器（只绑 node09 回环）,Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` 打隧道后页面自动用上。实测 H20:400 sims ≈ 0.8 s、1600 ≈ 3.2 s——**batch=1 时瓶颈在 Python 树遍历,H20 对 MPS 优势有限**;停服务 `docker rm -f az_serve`
+- MPS 与 CUDA 对同一局面给出相同落子与 Q（同权重+确定性搜索）,可当跨后端一致性冒烟用
 
 ## Report generation
 

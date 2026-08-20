@@ -1,16 +1,13 @@
 # datasets are fetched at run time (hf-mirror), never in git
 data/
 
-# large regenerable artifacts: rebuild from node09 checkpoints instead
-# (report/gomoku_play.html 28 MB <- gen_gomoku_play.py <- web_export)
-report/gomoku_play.html
-results/web_export/weights_fp16.bin
-
-# model checkpoints live on node09 (results/gomoku_ckpt_*), never in git
-results/**/*.pt
-results/gomoku_ckpt_*/
+# checkpoints stay on node09, EXCEPT iter040.pt: the final model, needed
+# locally by serve_gomoku.py and to re-export the play page's weights
+results/gomoku_ckpt_*/**
+!results/gomoku_ckpt_p15/iter040.pt
 
 # scratch
 __pycache__/
 *.pid
 .DS_Store
+.venv-serve/
