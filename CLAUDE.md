@@ -142,9 +142,34 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 
 对战页启动时探测 `http://127.0.0.1:8787/health`,有服务就把 AI 落子路由过去（更快,解锁 1600 sims 档）,失败/断开静默回退内嵌引擎。服务端**直接 `import train_rl_gomoku_alphazero` 复用 AZNet/State/Tree/run_sims**,零重实现——注意 import 前必须先 `os.environ.setdefault` 好 `AZ_BOARD/CH/BLOCKS`（模块级全局的老规矩）。stdlib http.server,唯一依赖 torch;CORS 头含 `Access-Control-Allow-Private-Network`（file:// 页面调 localhost 需要）。
 
-- **MacBook**：`uv venv --python 3.12 .venv-serve && uv pip install --python .venv-serve/bin/python torch numpy`,再 `.venv-serve/bin/python scripts/serve_gomoku.py`（系统 python3.14 装不了 torch）。检查点需先 rsync `iter040.pt` 到本地。实测 MPS:400 sims ≈ 0.8 s、1600 ≈ 4.9 s
+- **Mac**：环境由仓库根的 `pyproject.toml` + `uv.lock` 定义（只锁 macOS,torch+numpy 两个直接依赖）——`uv sync` 建 `.venv`,再 `uv run python scripts/serve_gomoku.py`（系统 python 装不了 torch,别用）。实测 M2 Ultra:`uv sync` 冷启动 20 s（torch 106 MB arm64 wheel,无 CUDA 包袱）,torch 2.13 + MPS。检查点需先 rsync `iter040.pt` 到本地。实测 MPS:400 sims ≈ 0.8 s、1600 ≈ 4.9 s
 - **node09**：`bash scripts/run_gomoku_serve.sh [gpu]` 起 `az_serve` 容器（只绑 node09 回环）,Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` 打隧道后页面自动用上。实测 H20:400 sims ≈ 0.8 s、1600 ≈ 3.2 s——**batch=1 时瓶颈在 Python 树遍历,H20 对 MPS 优势有限**;停服务 `docker rm -f az_serve`
 - MPS 与 CUDA 对同一局面给出相同落子与 Q（同权重+确定性搜索）,可当跨后端一致性冒烟用
+
+### 原生 Core ML / ANE 引擎（2026-08-20，`scripts/export_gomoku_coreml.py` + `ios/GomokuEngine/`）
+
+同一份 `iter040.pt` 的第三条部署路径,给 iPhone/iPad 原生 App 用。**同机对比 M2 Ultra batch=1:
+WebGL2 78 ms、Core ML GPU 2.86 ms、torch MPS 1.66 ms、Core ML ANE 0.665 ms** —— 两个数量级的差距
+全在推理实现上,不在模型上（3.6 GFLOP/次前向,10.53M 参数）。端到端 400 次模拟一手 = 264 ms（Swift release）。
+
+- **导出**（Mac,`uv sync --group coreml`）：coremltools trace + convert,fp16 / iOS17 target / 固定 batch。
+  脚本自带三项验收,任何一项不过就非零退出：①`testvec.json` 5 个参考局面对拍（阈值沿用对战页的 5e-3 / 2e-2,
+  实测 maxΔ 1.8e-3）②**compute plan 必须 344 个算子全在 ANE**③各 compute unit 延迟。产物只有
+  `coreml_report.json` 进 git,`.mlpackage` 21 MB 可一分钟再生故忽略
+- **GroupNorm 上 ANE 是这条路最大的未知数,已经排除**：GN 不像 BN 能折进卷积,会拆成
+  reduce_mean/sub/square/sqrt/real_div 一串。实测 27 个归一化层拆出的 54 个 reduce_mean 全部 preferred=ANE,
+  零分段零回退。**所以验收里那条 compute-plan 检查不能删** —— 换 checkpoint / 换 coremltools 都可能让它变
+- **两个必须显式做的事**：①加载时要 `.cpuAndNeuralEngine`,用默认的 `.all` 调度器会挑 GPU（2.86 ms,慢 4.3 倍）;
+  查 compute plan 时 `MLComputePlan.load_from_path` 也要传同样的 compute_units,否则报告全是 GPU
+  ②Swift 必须 `-c release`：debug 下 400 次模拟 469 ms、release 264 ms
+- **Swift 侧**（`ios/GomokuEngine/`,SwiftPM,`swift test -c release` 可跑）：`GomokuState` / `AZNet` / `Tree` /
+  `AZPlayer`(actor) / `EngineSelfTest`。release 下每次模拟 0.661 ms 而裸推理 0.665 ms —— **搜索树开销已经小到测不出**,
+  所以不需要 virtual-loss 批量搜索（ANE 上 batch=1 也只比 batch=8 差 1.6 倍）
+- 六条移植语义（终局值 mover 视角、backup 先翻号再累加、根 W/N 不要再取负、q 在 N==0 取 0、掩码在 softmax 之前、
+  温度采样先除最大访问数再取幂）在 `ios/GomokuEngine/README.md` 里逐条写了,其中三条有单元测试兜底
+- 设备估算（**未在真机验证**）：iPad Pro M5 每手 0.2-0.4 s、iPhone 16 Pro Max 0.4-0.8 s。瓶颈在内存带宽
+  （21 MB fp16 权重每次前向都要流过,batch=1 约需 50 GB/s,而 A18 Pro 总带宽约 60 GB/s）。
+  真机数字用 `swift test --filter testSearchThroughput` 直接量
 
 ## Report generation
 
