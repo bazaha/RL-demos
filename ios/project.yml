@@ -1,0 +1,44 @@
+name: Gomoku15
+options:
+  bundleIdPrefix: local.rl-demos
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+targets:
+  Gomoku15:
+    type: application
+    platform: iOS
+    sources:
+      - Gomoku15
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.rl-demos.gomoku
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_CFBundleDisplayName: "五子棋 AZ"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_VERSION: "5.9"
+        CODE_SIGNING_ALLOWED: "NO"      # simulator CLI builds; enable signing in Xcode for device installs
+        COREML_CODEGEN_LANGUAGE: None   # we load the compiled model by URL
+  Gomoku15Tests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - Gomoku15Tests
+    dependencies:
+      - target: Gomoku15
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Gomoku15.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Gomoku15"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  Gomoku15:
+    build:
+      targets:
+        Gomoku15: all
+        Gomoku15Tests: [test]
+    test:
+      targets:
+        - Gomoku15Tests

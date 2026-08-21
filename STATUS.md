@@ -17,6 +17,7 @@
 | 本地推理服务（Mac MPS / node09 CUDA docker） | ✅ 完成 2026-08-18 | `scripts/serve_gomoku.py` + `run_gomoku_serve.sh` | 页面自动探测,解锁 1600 sims;400 sims ≈ 0.8 s |
 | 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
 | VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
+| iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;真机 ANE 数字待装机读取 |
 | Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
 
 当前 node09 上跑着一个容器：`az_serve`（推理服务,GPU 0,只绑回环,`docker rm -f az_serve` 可停）；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
@@ -54,6 +55,7 @@
 - [x] 2026-07-25 9×9 双臂训练、臂间对打评估、`report/gomoku.html`（含测量分辨率修正:臂内梯子只排顺序等,见 CLAUDE.md）
 - [x] 2026-07-31 Phase-0 三组标定;Phase-2 评估体系（AZPlayer 温度采样、锚点池、分级战术题+精确校验器、`run_gomoku15_in_container.sh`）;报告模板新卡与单臂容错;战术校验器"对手无成五点"加固（随机化对抗复核 1,794 声明 0 驳倒）
 - [x] 2026-08-17 Phase-1 40 轮全程（含 2 次在线换配置的断点续跑、1 次温度干预）;`AZ_RESUME_ITER` 断点续跑;`report/gomoku15.html`;发射前多智能体审查修掉 5 处报告硬编码
+- [x] 2026-08-21 iOS App（分支 `ios-app`,`ios/` 目录）:iter040 → CoreML fp16 mlprogram(`export_gomoku_coreml.py`,Mac 上对拍 5 向量全绿,最差 1.8e-3);Swift 移植 State/MCTS(与 trainer 逐语义一致)+ SwiftUI 双端自适应界面;XCTest 全绿(规则/CoreML parity/战术);iPhone 17 Pro Max 与 iPad Pro M5 模拟器截图验证。装真机:Xcode 开 `ios/Gomoku15.xcodeproj`,设置签名 Team 后 Run;App 内徽章显示引擎校验与每手 ms
 - [x] 2026-08-19 VCF 求解器基线（`eval_gomoku_vcf_baseline.py`:成五>封五>VCF(5)>拆双威胁>规则贪心,全复用校验器;AZ 侧温度 0.3,每检查点 12 局）。得分曲线 0.00→0.50→0.42→0.42→0.92→0.92→1.00→0.92→1.00:**量程 30 轮**(rule-greedy 只有 15),且有结构——冲锋流期(iter10-15)反而输给纯战术机器(0.42),iter20 起进攻深度超出其 2 手防守视界。强网络的零星败局是长对局末段漏掉 5 深 VCF(iter035 败局:45 手,第 39 手失守),**400 sims 下的 VCF 盲区真实存在但罕见**。`resumed_at` 一行修复同批完成
 - [x] 2026-08-18 离线硬探针（`eval_gomoku_hard_probes.py`,4 族 × 2 向,诱饵与正解分离、构造期校验器证明）。三个发现:①浅战术（≤3 手强制,含毒化冲四）iter5 起 raw 全对、零上钩——饱和是真实能力,此后的 Elo 增长不在浅战术里;②必胜局面的 value 置信是晚熟信号,+0.64(iter5)→+1.00(iter35),iter25_tr 曾出现"下对棋却判 -0.91";③HV2 风格拐点与 iter25 温度干预精确对齐:干预前全走直接双威胁 (5,10),干预后全走保先占毒点 (12,12),两者皆客观胜着。教训:判卷 good 集必须=全部客观胜着（_vcf_starts）,窄判卷曾把更聪明的下法误判成回退
 - [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）

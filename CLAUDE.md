@@ -143,6 +143,15 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **无头验证**：`--use-angle=swiftshader` 下 WebGL 可用但慢 ~50 倍,驱动对局用 sims=0/32,否则 3 手 128 sims 就超 7 分钟（审查 agent 全卡死过一回）;**无头老模式窗口宽度下限 500px**,`--window-size=390` 拍出来的"溢出"是伪影,量 `innerWidth` 确认;DPR 路径用 `--force-device-scale-factor=2` 测
 - 移动端:grid 轨道要 `minmax(0,1fr)` + item `min-width:0`,否则 canvas 固有宽度撑破单列布局
 
+### iOS App（2026-08-21，分支 `ios-app`，`ios/` 目录）
+
+`export_gomoku_coreml.py` 把 iter040 转成 fp16 mlprogram（内部 fp16 保 ANE 资格）,转换脚本自带 Mac 端 CoreML 对拍(同一套 testvec)。Swift 侧 State/MCTS 逐语义复刻 trainer,XCTest 里再对拍一次。构建:`cd ios && xcodegen generate && xcodebuild -scheme Gomoku15 -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test`。真踩过的坑：
+
+- **fp16 mlprogram 的 fp16 输出张量在 iOS 模拟器 CPU 路径上读出全零**（value 正常,policy 全 0）——转换时给 outputs 强制 `dtype=np.float32`（只在出口加 cast,内部仍 fp16）
+- **设备端 MLMultiArray 输出可能是 Float16**,把 dataPointer 按 Float32 绑定会读出 `-6.7e-41` 这类垃圾——必须按 `dataType` 分支读取;输出还有 padding（shape [1,225] strides [256,1]）
+- 模拟器偶发 "Busy / failed preflight checks" 启动失败——`xcrun simctl shutdown all` 后重跑即可;`@MainActor` 类里的纯函数要 `nonisolated` 才能进 XCTest
+- 截图钩子:launch 参数 `-autoplay` 自动下几手(128 sims)并开热力图
+
 ### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
 
 对战页启动时探测 `http://127.0.0.1:8787/health`,有服务就把 AI 落子路由过去（更快,解锁 1600 sims 档）,失败/断开静默回退内嵌引擎。服务端**直接 `import train_rl_gomoku_alphazero` 复用 AZNet/State/Tree/run_sims**,零重实现——注意 import 前必须先 `os.environ.setdefault` 好 `AZ_BOARD/CH/BLOCKS`（模块级全局的老规矩）。stdlib http.server,唯一依赖 torch;CORS 头含 `Access-Control-Allow-Private-Network`（file:// 页面调 localhost 需要）。
