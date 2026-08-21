@@ -21,6 +21,7 @@ targets:
         SWIFT_VERSION: "5.9"
         CODE_SIGNING_ALLOWED: "NO"      # simulator CLI builds; enable signing in Xcode for device installs
         COREML_CODEGEN_LANGUAGE: None   # we load the compiled model by URL
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   Gomoku15Tests:
     type: bundle.unit-test
     platform: iOS

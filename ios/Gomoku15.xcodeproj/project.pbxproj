@@ -13,6 +13,7 @@
 		8B6691D7FDDC7CF33A35A673 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E58FE114EC2BF42847440D /* EngineTests.swift */; };
 		92BFF582A0FAF64C1DB5C9C1 /* Evaluator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00625B294B5DFAADC1CC1758 /* Evaluator.swift */; };
 		94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E687F176EF14395A24DA21D /* Gomoku15App.swift */; };
+		C5E2CDEF9B5DEB2CBEB0450B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00E75BF0D232196785397E68 /* Assets.xcassets */; };
 		E9A46224031C0DE27EC957C4 /* Gomoku15.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */; };
 		EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68AB5E4ACE02965B874DC6C6 /* BoardView.swift */; };
 		FA3D6B2F465FD1DFB5ACDB9B /* GameViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258E41B322077128FF742FB1 /* GameViewModel.swift */; };
@@ -30,6 +31,7 @@
 
 /* Begin PBXFileReference section */
 		00625B294B5DFAADC1CC1758 /* Evaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Evaluator.swift; sourceTree = "<group>"; };
+		00E75BF0D232196785397E68 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20320E0CCF992D8125145459 /* testvec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = testvec.json; sourceTree = "<group>"; };
 		258E41B322077128FF742FB1 /* GameViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewModel.swift; sourceTree = "<group>"; };
 		2615373FEDB62B11492AB849 /* MCTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCTS.swift; sourceTree = "<group>"; };
@@ -95,6 +97,7 @@
 		C02EE870089F522968B65B59 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				00E75BF0D232196785397E68 /* Assets.xcassets */,
 				20320E0CCF992D8125145459 /* testvec.json */,
 			);
 			path = Resources;
@@ -183,6 +186,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C5E2CDEF9B5DEB2CBEB0450B /* Assets.xcassets in Resources */,
 				39BF5801CE867449E3B4F982 /* testvec.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
