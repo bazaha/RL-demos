@@ -28,7 +28,7 @@ def main():
     ckpt = os.environ.get("CAL_CKPT", "")
     if ckpt:
         net.load_state_dict(torch.load(ckpt, map_location="cpu"))
-    pool = az.SelfPlayPool(az.GPUS, az.CHANNELS, az.BLOCKS)
+    pool = az.make_pool(az.GPUS, az.CHANNELS, az.BLOCKS)
     try:
         t1 = time.time()
         X, PI, Z, logs, winners, lengths, sp_stats, worker_s = pool.run(
@@ -40,9 +40,10 @@ def main():
     row = {
         "note": os.environ.get("CAL_NOTE", ""),
         "board": az.BOARD, "channels": az.CHANNELS, "blocks": az.BLOCKS,
-        "sims": az.N_SIMS, "workers": len(az.GPUS),
+        "sims": az.N_SIMS, "workers": pool.n,
+        "served": az.SERVED,
         "games": az.GAMES_PER_ITER,
-        "games_per_worker": round(az.GAMES_PER_ITER / len(az.GPUS), 1),
+        "games_per_worker": round(az.GAMES_PER_ITER / pool.n, 1),
         "ckpt": os.path.basename(ckpt) if ckpt else "random-init",
         "positions": int(len(X)),
         "avg_len": round(float(np.mean(lengths)), 1),

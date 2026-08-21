@@ -123,6 +123,16 @@ SEED = _ei("AZ_SEED", 42)
 RESUME_ITER = _ei("AZ_RESUME_ITER", 0)
 DEVICE = os.environ.get("AZ_DEVICE", "cuda:0")
 GPUS = [int(g) for g in os.environ.get("AZ_GPUS", "0").split(",") if g != ""]
+# per-GPU inference server mode: one server process per (unique) GPU in AZ_GPUS
+# owns the net and batches NN requests; AZ_WORKERS cpu-only processes walk the
+# trees. Workers hold no weights and no CUDA context, so their count is bound
+# by cores, not by GPU contention. 0 = classic mode (workers own the net).
+SERVED = _ei("AZ_SERVED", 0)
+SERVED_WORKERS = _ei("AZ_WORKERS", 0)     # 0 -> 8 per server GPU
+SRV_MAXPOS = _ei("AZ_SRV_MAXPOS", 384)    # positions per server forward: small
+                                          # batches answer fast, and worker sim
+                                          # cadence is bound by server latency
+SRV_HALF = _ei("AZ_SRV_HALF", 0)          # bf16 server forwards (H20: ~2x)
 OUT_JSON = os.environ.get("AZ_OUT", "results/gomoku_metrics.json")
 CKPT_DIR = os.environ.get("AZ_CKPT", "results/gomoku_ckpt")
 TAG = os.environ.get("AZ_TAG", "az")
@@ -458,11 +468,14 @@ def run_sims(net, trees, n_sims, device, noise_rng=None, beta=0.0):
             if beta > 0.0:
                 bbuf[i] = leaf.state.board
                 tbuf[i] = leaf.state.to_play
-        with torch.no_grad():
-            x = torch.from_numpy(xbuf[:k]).to(device, non_blocking=True)
-            logits, values = net(x)
-            probs = torch.softmax(logits, dim=1).float().cpu().numpy()
-            vals = values.float().cpu().numpy()
+        if hasattr(net, "infer"):   # RemoteEvaluator: forward runs on a server
+            probs, vals = net.infer(xbuf[:k])
+        else:
+            with torch.no_grad():
+                x = torch.from_numpy(xbuf[:k]).to(device, non_blocking=True)
+                logits, values = net(x)
+                probs = torch.softmax(logits, dim=1).float().cpu().numpy()
+                vals = values.float().cpu().numpy()
         if beta > 0.0:
             rp = rule_priors_batch(bbuf[:k], tbuf[:k])
             probs = (1.0 - beta) * probs + beta * rp
@@ -689,6 +702,180 @@ class SelfPlayPool:
             self.task_q.put(None)
         for p in self.procs:
             p.join(timeout=30)
+
+
+# --------------------------------------------------------------------------- #
+# served self-play: one inference server per GPU, cpu-only tree workers
+# --------------------------------------------------------------------------- #
+class RemoteEvaluator:
+    """Stands in for the net inside a cpu worker: run_sims dispatches on the
+    presence of .infer, so selfplay() is byte-identical in both modes."""
+
+    def __init__(self, wid, req_q, resp_q):
+        self.wid = wid
+        self.req_q = req_q
+        self.resp_q = resp_q
+
+    def eval(self):
+        pass
+
+    def infer(self, x):
+        self.req_q.put(("infer", self.wid, x))
+        return self.resp_q.get(timeout=600)
+
+
+def _served_server(gpu, ch, blocks, req_q, resp_qs, ack_q):
+    """Owns the net on one GPU; greedily drains the request queue so batches
+    grow to whatever is in flight across all workers, then answers each."""
+    import queue as _q
+    try:
+        dev = f"cuda:{gpu}" if torch.cuda.is_available() else "cpu"
+        if dev != "cpu":
+            torch.cuda.set_device(gpu)
+        net = AZNet(ch, blocks).to(dev)
+        net.eval()
+        while True:
+            msg = req_q.get()
+            stop = False
+            batch = []
+            npos = 0
+            while True:
+                if msg is None:
+                    stop = True
+                elif msg[0] == "weights":
+                    net.load_state_dict({k: v.to(dev) for k, v in msg[1].items()})
+                    net.eval()
+                    ack_q.put((gpu, None))
+                else:
+                    batch.append(msg)
+                    npos += len(msg[2])
+                if stop or npos >= SRV_MAXPOS:
+                    break
+                try:
+                    msg = req_q.get_nowait()
+                except _q.Empty:
+                    break
+            if batch:
+                xs = np.concatenate([m[2] for m in batch])
+                with torch.no_grad():
+                    t = torch.from_numpy(xs).to(dev, non_blocking=True)
+                    if SRV_HALF and dev != "cpu":
+                        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                            logits, v = net(t)
+                    else:
+                        logits, v = net(t)
+                    probs = torch.softmax(logits.float(), dim=1).cpu().numpy()
+                    vals = v.float().cpu().numpy()
+                off = 0
+                for m in batch:
+                    k = len(m[2])
+                    resp_qs[m[1]].put((probs[off:off + k], vals[off:off + k]))
+                    off += k
+            if stop:
+                break
+    except Exception as e:
+        import traceback
+        ack_q.put((gpu, f"{e}\n{traceback.format_exc()}"))
+
+
+def _served_worker(wid, req_qs, resp_q, task_q, res_q, n_srv):
+    """Pure-CPU tree walker: no weights, no CUDA context."""
+    try:
+        torch.set_num_threads(1)
+        ev = RemoteEvaluator(wid, req_qs[wid % n_srv], resp_q)
+        while True:
+            task = task_q.get()
+            if task is None:
+                break
+            n_games, seed, n_sims, beta = task
+            rng = np.random.default_rng(seed)
+            t0 = time.time()
+            X, PI, Z, logs, winners, lengths, sp_stats = selfplay(
+                ev, n_games, n_sims, "cpu", rng, beta=beta)
+            res_q.put((wid, X, PI, Z, logs, winners, lengths, sp_stats,
+                       time.time() - t0, None))
+    except Exception as e:
+        import traceback
+        res_q.put((wid, None, None, None, None, None, None, None, 0.0,
+                   f"{e}\n{traceback.format_exc()}"))
+
+
+class ServedSelfPlayPool:
+    """Same interface as SelfPlayPool; per-iteration weights go to n_gpu
+    servers instead of n_worker processes."""
+
+    def __init__(self, gpus, n_workers, ch, blocks):
+        ctx = mp.get_context("spawn")
+        self.gpus = sorted(set(gpus))
+        self.task_q = ctx.Queue()
+        self.res_q = ctx.Queue()
+        self.ack_q = ctx.Queue()
+        self.req_qs = [ctx.Queue() for _ in self.gpus]
+        self.resp_qs = [ctx.Queue() for _ in range(n_workers)]
+        self.servers = []
+        for i, g in enumerate(self.gpus):
+            p = ctx.Process(target=_served_server,
+                            args=(g, ch, blocks, self.req_qs[i], self.resp_qs,
+                                  self.ack_q), daemon=True)
+            p.start()
+            self.servers.append(p)
+        self.procs = []
+        for wid in range(n_workers):
+            p = ctx.Process(target=_served_worker,
+                            args=(wid, self.req_qs, self.resp_qs[wid],
+                                  self.task_q, self.res_q, len(self.gpus)),
+                            daemon=True)
+            p.start()
+            self.procs.append(p)
+        self.n = n_workers
+
+    def run(self, net, n_games, n_sims, seed, beta, timeout=3600):
+        sd = {k: v.detach().cpu() for k, v in net.state_dict().items()}
+        for q in self.req_qs:
+            q.put(("weights", sd))
+        for _ in self.req_qs:                 # weight barrier before any task
+            g, err = self.ack_q.get(timeout=180)
+            if err is not None:
+                raise RuntimeError(f"inference server on GPU {g} failed: {err}")
+        share = [n_games // self.n] * self.n
+        for i in range(n_games % self.n):
+            share[i] += 1
+        for wid in range(self.n):
+            self.task_q.put((share[wid], seed * 1000 + wid, n_sims, beta))
+        out = []
+        for _ in range(self.n):
+            r = self.res_q.get(timeout=timeout)
+            if r[-1] is not None:
+                raise RuntimeError(f"self-play worker {r[0]} failed: {r[-1]}")
+            out.append(r)
+        out.sort(key=lambda r: r[0])
+        X = np.concatenate([r[1] for r in out])
+        PI = np.concatenate([r[2] for r in out])
+        Z = np.concatenate([r[3] for r in out])
+        logs = [g for r in out for g in r[4]]
+        winners = [w for r in out for w in r[5]]
+        lengths = [l for r in out for l in r[6]]
+        stats = {}
+        for r in out:
+            for k, v in (r[7] or {}).items():
+                stats[k] = stats.get(k, 0) + v
+        worker_s = [round(r[8], 1) for r in out]
+        return X, PI, Z, logs, winners, lengths, stats, worker_s
+
+    def close(self):
+        for _ in self.procs:
+            self.task_q.put(None)
+        for q in self.req_qs:
+            q.put(None)
+        for p in self.procs + self.servers:
+            p.join(timeout=30)
+
+
+def make_pool(gpus, ch, blocks):
+    if SERVED:
+        n_workers = SERVED_WORKERS or 8 * len(set(gpus))
+        return ServedSelfPlayPool(gpus, n_workers, ch, blocks)
+    return SelfPlayPool(gpus, ch, blocks)
 
 
 # --------------------------------------------------------------------------- #
@@ -1243,7 +1430,7 @@ def main():
     for _ in range(RESUME_ITER):   # replay the LR schedule up to the resume point
         sched.step()
     buf = Buffer(BUFFER_CAP)
-    pool = SelfPlayPool(GPUS, CHANNELS, BLOCKS)
+    pool = make_pool(GPUS, CHANNELS, BLOCKS)
 
     M = {
         "algo": "AlphaZero", "tag": TAG,

@@ -119,6 +119,7 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 ### Phase-3 吞吐（分支 `phase-3-throughput`，2026-08-21，前三项完成）
 
 `selfplay()` 内三个环境变量开关,默认全兼容：`AZ_CAP_PROB`（<1 开启 playout cap randomization,只有全搜索的手进训练目标、带根噪声;便宜手 `AZ_CAP_SIMS` 次模拟只推进对局）、`AZ_RESIGN`（连续 `AZ_RESIGN_N` 次己方根值 < -`AZ_RESIGN_V` 即认输;**必须配 `AZ_RESIGN_MIN`（默认 16）**——value 头开局过度自信,无护栏时白方第 7-9 手大批早退、约 7% 错标;`AZ_RESIGN_KEEP` 比例的对局永不认输,用于审计假认输率,新 JSON 字段 `false_resigns/noresign_games`）、`AZ_DEAD_DRAW`（双方均无对手-free 5 窗即判和,数学无损,默认开）。`selfplay/pool.run` 返回元组多了 stats dict——改签名时同步 `calib_selfplay_point.py` 和 main()。消融数字与 regime 告诫见 STATUS.md backlog #1 与 `results/calib_phase3.jsonl`。
+**每卡单推理服务（`AZ_SERVED=1` + `AZ_WORKERS/AZ_SRV_MAXPOS/AZ_SRV_HALF`）已实现但默认关**:同步版实测平坦在 1.05 games/s（经典 12w=1.34,12→48 worker 无变化,小批窗/bf16 均无效）——每个 sim 一次同步 IPC 往返（~3-5ms）是 worker 的节拍器,长棋尾部 batch≈1 时最伤;server 前向与本地逐位一致（本地 CPU 冒烟 Δ=0）。要兑现需 async+虚拟损失重构。
 
 ### Phase-0 标定（2026-07-31，`run_phase0_calib.sh` → `results/calib_*.jsonl`）
 
