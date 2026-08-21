@@ -77,6 +77,10 @@ RESIGN = _ei("AZ_RESIGN", 0)
 RESIGN_V = _ef("AZ_RESIGN_V", 0.95)
 RESIGN_N = _ei("AZ_RESIGN_N", 3)
 RESIGN_KEEP = _ef("AZ_RESIGN_KEEP", 0.1)
+# no resigning before this ply: the value head is at its most overconfident in
+# openings (measured: it believes black wins from the empty board), so early
+# counting turns first-player advantage into mislabeled games
+RESIGN_MIN = _ei("AZ_RESIGN_MIN", 16)
 # dead-draw adjudication: end the game as a draw once NEITHER side has any
 # 5-window free of opponent stones (the result is forced regardless of play,
 # so this is lossless). 1 = on.
@@ -552,7 +556,7 @@ def selfplay(net, n_games, n_sims, device, rng, temp_moves=TEMP_MOVES, beta=0.0)
                 pi /= pi.sum()
             else:
                 pi = N.astype(np.float64) / tot
-            if RESIGN and tot > 0:
+            if RESIGN and tot > 0 and move_i >= RESIGN_MIN:
                 q = float(t.root.W.sum()) / tot      # mover's point of view
                 mover = st.to_play
                 low_cnt[i][mover] = low_cnt[i][mover] + 1 if q < -RESIGN_V else 0
@@ -1254,7 +1258,8 @@ def main():
                 "temp_moves": TEMP_MOVES, "batch": BATCH,
                 "cap_prob": CAP_PROB, "cap_sims": CAP_SIMS,
                 "resign": RESIGN, "resign_v": RESIGN_V, "resign_n": RESIGN_N,
-                "resign_keep": RESIGN_KEEP, "dead_draw": DEAD_DRAW,
+                "resign_keep": RESIGN_KEEP, "resign_min": RESIGN_MIN,
+                "dead_draw": DEAD_DRAW,
                 "train_steps": TRAIN_STEPS, "lr": LR, "buffer": BUFFER_CAP,
                 "eval_sims": EVAL_SIMS, "board": BOARD, "n_in_row": N_IN_ROW,
                 "beta0": BETA0, "rule_iters": RULE_ITERS, "seed": SEED},

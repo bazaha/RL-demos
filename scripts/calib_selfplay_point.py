@@ -49,6 +49,8 @@ def main():
         "max_len": int(max(lengths)),
         "draws": int(sum(1 for w in winners if w == 0)),
         "resigned": int(sp_stats.get("resigned", 0)),
+        "false_resigns": int(sp_stats.get("false_resigns", 0)),
+        "noresign_games": int(sp_stats.get("noresign_games", 0)),
         "adjudicated": int(sp_stats.get("adjudicated", 0)),
         "moves_total": int(sp_stats.get("moves_total", 0)),
         "moves_recorded": int(sp_stats.get("moves_recorded", len(X))),

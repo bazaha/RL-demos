@@ -116,6 +116,10 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 
 **这一趟跑出来的答案（2026-07-25，50 轮 × 两条臂）：在这个规模上测不出规则冷启动的优势。** 全程 160 个开局对 / 320 局，rules 得分率 50.9% ± 3.9pp（2 SE）；退火区间内（≤20 轮）53.9% ± 7.7pp，退火之后 49.0% ± 4.0pp，两段之差也在噪声里；联合 Elo 峰值 pure +1737 / rules +1749，逐轮差值在 −114…+94 之间摆动而拟合分辨率是 ±32；"省下的轮次"中位数 −3 轮而换算误差 ±22 轮。规则先验也不额外花时间（50 轮多 1.7 分钟 / 1.5%）。**要在这个题目上真做出差别，得把区分度做出来**：更大的棋盘、更少的每轮 self-play 局数（让早期数据更稀缺、先验更值钱），或者只比"到达某个固定强度用了几轮"而那个强度不能在 15 轮内饱和。
 
+### Phase-3 吞吐（分支 `phase-3-throughput`，2026-08-21，前三项完成）
+
+`selfplay()` 内三个环境变量开关,默认全兼容：`AZ_CAP_PROB`（<1 开启 playout cap randomization,只有全搜索的手进训练目标、带根噪声;便宜手 `AZ_CAP_SIMS` 次模拟只推进对局）、`AZ_RESIGN`（连续 `AZ_RESIGN_N` 次己方根值 < -`AZ_RESIGN_V` 即认输;**必须配 `AZ_RESIGN_MIN`（默认 16）**——value 头开局过度自信,无护栏时白方第 7-9 手大批早退、约 7% 错标;`AZ_RESIGN_KEEP` 比例的对局永不认输,用于审计假认输率,新 JSON 字段 `false_resigns/noresign_games`）、`AZ_DEAD_DRAW`（双方均无对手-free 5 窗即判和,数学无损,默认开）。`selfplay/pool.run` 返回元组多了 stats dict——改签名时同步 `calib_selfplay_point.py` 和 main()。消融数字与 regime 告诫见 STATUS.md backlog #1 与 `results/calib_phase3.jsonl`。
+
 ### Phase-0 标定（2026-07-31，`run_phase0_calib.sh` → `results/calib_*.jsonl`）
 
 为规划下一轮训练跑的三组标定，`calib_draw_vs_sims.py` / `calib_selfplay_point.py` 都只 import trainer 不改它：
