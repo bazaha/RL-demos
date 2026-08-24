@@ -151,6 +151,7 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **设备端 MLMultiArray 输出可能是 Float16**,把 dataPointer 按 Float32 绑定会读出 `-6.7e-41` 这类垃圾——必须按 `dataType` 分支读取;输出还有 padding（shape [1,225] strides [256,1]）
 - 模拟器偶发 "Busy / failed preflight checks" 启动失败——`xcrun simctl shutdown all` 后重跑即可;`@MainActor` 类里的纯函数要 `nonisolated` 才能进 XCTest
 - 截图钩子:launch 参数 `-autoplay` 自动下几手(128 sims)并开热力图
+- **真机性能（iPad Pro 11" M5,2026-08-24 实测）**:400 sims 0.3-0.4s、1600 sims 1.3s,合 ~0.8ms/sim——比 Python 栈(MPS/H20 batch-1 均 ~2ms/sim)快一倍以上,Swift 树遍历 + ANE 前向是全项目最快的单局面推理栈;无需算子落位分析
 
 ### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
 

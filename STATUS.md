@@ -17,7 +17,7 @@
 | 本地推理服务（Mac MPS / node09 CUDA docker） | ✅ 完成 2026-08-18 | `scripts/serve_gomoku.py` + `run_gomoku_serve.sh` | 页面自动探测,解锁 1600 sims;400 sims ≈ 0.8 s |
 | 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
 | VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
-| iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;真机 ANE 数字待装机读取 |
+| iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;**iPad Pro M5 实测 400 sims 0.3-0.4s、1600 sims 1.3s（~0.8ms/sim,全栈最快）** |
 | Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
 
 当前 node09 上跑着一个容器：`az_serve`（推理服务,GPU 0,只绑回环,`docker rm -f az_serve` 可停）；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
