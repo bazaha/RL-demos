@@ -1,34 +1,26 @@
 import SwiftUI
 
-struct BoardView: View {
-    @ObservedObject var vm: GameViewModel
+/// Pure display board: no view-model dependency, reused by the game screen
+/// and the opening-book previews.
+struct BoardCanvas: View {
+    var board: [Int8]
+    var lastMove: Int? = nil
+    var winCells: [Int]? = nil
+    var heat: [Float]? = nil
+    var showHeat = false
 
     var body: some View {
-        GeometryReader { geo in
-            let size = min(geo.size.width, geo.size.height)
-            Canvas { ctx, _ in
-                draw(ctx: ctx, size: size)
-            }
-            .frame(width: size, height: size)
-            .contentShape(Rectangle())
-            .onTapGesture { pt in
-                let B = Rules.board
-                let pad = size * 0.045
-                let cell = (size - 2 * pad) / CGFloat(B - 1)
-                let c = Int(((pt.x - pad) / cell).rounded())
-                let r = Int(((pt.y - pad) / cell).rounded())
-                guard r >= 0, r < B, c >= 0, c < B else { return }
-                let dx = pt.x - (pad + CGFloat(c) * cell)
-                let dy = pt.y - (pad + CGFloat(r) * cell)
-                guard dx * dx + dy * dy <= cell * cell * 0.45 else { return }
-                vm.tap(r * B + c)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        Canvas { ctx, size in
+            Self.draw(ctx: ctx, size: min(size.width, size.height),
+                      board: board, lastMove: lastMove, winCells: winCells,
+                      heat: heat, showHeat: showHeat)
         }
         .aspectRatio(1, contentMode: .fit)
     }
 
-    private func draw(ctx: GraphicsContext, size: CGFloat) {
+    static func draw(ctx: GraphicsContext, size: CGFloat, board: [Int8],
+                     lastMove: Int?, winCells: [Int]?, heat: [Float]?,
+                     showHeat: Bool) {
         let B = Rules.board
         let pad = size * 0.045
         let cell = (size - 2 * pad) / CGFloat(B - 1)
@@ -53,11 +45,10 @@ struct BoardView: View {
                      with: .color(lineColor))
         }
 
-        // AI-view heatmap under the stones
-        if vm.showHeat, let heat = vm.heat {
+        if showHeat, let heat {
             let mx = heat.max() ?? 0
             if mx > 0 {
-                for i in 0..<Rules.cells where heat[i] >= max(2, mx * 0.08) && vm.board[i] == 0 {
+                for i in 0..<Rules.cells where heat[i] >= max(2, mx * 0.08) && board[i] == 0 {
                     let p = xy(i)
                     let alpha = 0.08 + 0.55 * Double(heat[i] / mx)
                     ctx.fill(Path(roundedRect: CGRect(x: p.x - cell * 0.38, y: p.y - cell * 0.38,
@@ -68,11 +59,11 @@ struct BoardView: View {
             }
         }
 
-        for i in 0..<Rules.cells where vm.board[i] != 0 {
+        for i in 0..<Rules.cells where board[i] != 0 {
             let p = xy(i)
             let rad = cell * 0.44
             let rect = CGRect(x: p.x - rad, y: p.y - rad, width: 2 * rad, height: 2 * rad)
-            let isBlack = vm.board[i] == 1
+            let isBlack = board[i] == 1
             ctx.fill(Path(ellipseIn: rect),
                      with: .radialGradient(
                         Gradient(colors: isBlack
@@ -84,17 +75,46 @@ struct BoardView: View {
                        with: .color(.black.opacity(isBlack ? 0.5 : 0.3)), lineWidth: 0.6)
         }
 
-        if let last = vm.moves.last {
+        if let last = lastMove {
             let p = xy(last)
             ctx.stroke(Path(ellipseIn: CGRect(x: p.x - cell * 0.18, y: p.y - cell * 0.18,
                                               width: cell * 0.36, height: cell * 0.36)),
                        with: .color(.orange), lineWidth: 2)
         }
-        if let win = vm.winCells, let f = win.first, let l = win.last {
+        if let win = winCells, let f = win.first, let l = win.last {
             var line = Path()
             line.move(to: xy(f)); line.addLine(to: xy(l))
             ctx.stroke(line, with: .color(.orange),
                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
         }
+    }
+}
+
+/// Interactive board for the game screen: BoardCanvas + the tap gesture.
+struct BoardView: View {
+    @ObservedObject var vm: GameViewModel
+
+    var body: some View {
+        GeometryReader { geo in
+            let size = min(geo.size.width, geo.size.height)
+            BoardCanvas(board: vm.board, lastMove: vm.moves.last,
+                        winCells: vm.winCells, heat: vm.heat, showHeat: vm.showHeat)
+                .frame(width: size, height: size)
+                .contentShape(Rectangle())
+                .onTapGesture { pt in
+                    let B = Rules.board
+                    let pad = size * 0.045
+                    let cell = (size - 2 * pad) / CGFloat(B - 1)
+                    let c = Int(((pt.x - pad) / cell).rounded())
+                    let r = Int(((pt.y - pad) / cell).rounded())
+                    guard r >= 0, r < B, c >= 0, c < B else { return }
+                    let dx = pt.x - (pad + CGFloat(c) * cell)
+                    let dy = pt.y - (pad + CGFloat(r) * cell)
+                    guard dx * dx + dy * dy <= cell * cell * 0.45 else { return }
+                    vm.tap(r * B + c)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .aspectRatio(1, contentMode: .fit)
     }
 }

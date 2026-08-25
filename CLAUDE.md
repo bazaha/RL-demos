@@ -161,6 +161,23 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **node09**：`bash scripts/run_gomoku_serve.sh [gpu]` 起 `az_serve` 容器（只绑 node09 回环）,Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` 打隧道后页面自动用上。实测 H20:400 sims ≈ 0.8 s、1600 ≈ 3.2 s——**batch=1 时瓶颈在 Python 树遍历,H20 对 MPS 优势有限**;停服务 `docker rm -f az_serve`
 - MPS 与 CUDA 对同一局面给出相同落子与 Q（同权重+确定性搜索）,可当跨后端一致性冒烟用
 
+### 开局库（2026-08-26，分支 `opening-book`，网页 + iOS 双端）
+
+从 iter040 大批自对弈中挖出的高胜率开局,两端共用一份 `results/book/gomoku_book.json`(17 条,~6 KB)。四步流水线:
+
+1. **生成**(node09):`book_selfplay_mass.py` 复用 trainer 的 `make_pool`/`pool.run`,丢弃训练张量只留 `{"moves","winner","len"}` 增量 JSONL。实跑 5 万局 5.2 h(GPU 1/3/4 × 12 workers,2.7 局/秒;`AZ_SIMS=800 AZ_TEMP_MOVES=8 AZ_CAP_PROB=0.25 AZ_RESIGN=1(MIN 16, KEEP 0.05) AZ_DEAD_DRAW=1`)。黑胜 97.7%,假认输 1/2455;`book_check.py` 做落地校验
+2. **挖掘**(本地,纯 numpy):`book_mine.py` 把每局前 K 手做 8 重二面体归一(变换后棋盘字节取 min、并列取最小 g;按棋盘内容 key,转序自动合并),按归一局面分组统计,Wilson 95% 下界排序,前 4 手同前缀 ≤5 条护栏,组内众数线逐手延伸(支持数 < max(30, 0.1n) 截断)。**改任何变换/统计逻辑先跑 `--selftest`**(对称不变性、植入旋转重复合并、Wilson 手算对拍)
+3. **标注**(本地 MPS):`book_annotate.py` 逐手前向 iter040 写 `v_black[]`(mover 视角转黑方视角),模型评估与经验胜率在 UI 上分开呈现
+4. **嵌入**:网页 `gen_gomoku_play.py` 经 `BOOK_SRC`→`__BOOK__`(缺失嵌 `null`,面板整体 `hidden`);iOS 拷到 `Resources/gomoku_book.json`(XcodeGen 自动打包),`OpeningBook.swift` 解码、`BookView.swift` 列表、点按 `startFromOpening` 摆盘接着下(与悔棋共用 `reset(to:)`/`restartFromMoves`,轮到 AI 会自动应手)
+
+实测校准过的参数与坑:
+
+- **K=4、MIN_N=100 是数据说了算的**:开局弥散远超预期(5 万局在第 4 手就有 16,843 个归一局面;K=8 时 1,200 局 1,185 个组,完全不可用),n≥200 只有 ~10 条、n≥100 得 17 条。中途用 10.8k 局预演投影后才定的档
+- **这是"模型开局观"不是客观棋理**:总黑胜 97.7%(TEMP_MOVES=8 → 第 9 手起近似 argmax,先手转化率极高),条目胜率 80.6%-97.7% 有梯度但都偏高,`avg_len` 是更有区分度的列;两端 UI 的告诫文案必须保留。命名用中性坐标("G8·K9·H7·J6 系",取前 4 手与分组层一致,3 手会重名),不借连珠术语
+- `book_mine.py` 输出路径走 `BOOK_JSON` 环境变量(没有 `--out` 参数);`source.temp_moves` 曾误写成 K,已修
+- iOS `BookTests` 会校验每条线合法重放+计数自洽——它逮住过手搓假书夹具的编造错误,别嫌它严
+- 无头验证对战页书面板时,执白路径要先按"新对局"再切执子(对局中执子选择器锁定是设计行为,不是 bug)
+
 ## Report generation
 
 两个报告都是同一套做法：`gen_*.py` 读 `results/*` 并把 JSON 内联进对应模板的 `__DATA_JSON__` 占位符，产出零依赖、可直接分发的单个 HTML。

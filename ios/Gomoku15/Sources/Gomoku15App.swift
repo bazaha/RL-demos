@@ -11,8 +11,36 @@ struct Gomoku15App: App {
 
 struct ContentView: View {
     @StateObject private var vm = GameViewModel()
+    private let book = OpeningBook.load()
+    @State private var showBook = false
 
     var body: some View {
+        NavigationStack {
+            mainBody
+                .toolbar {
+                    if let book {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                showBook = true
+                            } label: {
+                                Label("开局库", systemImage: "book")
+                            }
+                        }
+                    }
+                }
+                .navigationDestination(isPresented: $showBook) {
+                    if let book { BookView(book: book, vm: vm) }
+                }
+                .navigationBarTitleDisplayMode(.inline)
+        }
+        .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-book") {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { showBook = true }
+            }
+        }
+    }
+
+    private var mainBody: some View {
         GeometryReader { geo in
             let wide = geo.size.width > geo.size.height * 1.05
             Group {

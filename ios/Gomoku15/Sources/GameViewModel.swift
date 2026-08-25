@@ -102,7 +102,20 @@ final class GameViewModel: ObservableObject {
         var k = moves.count
         if position.toPlay == humanSide || gameOver { k -= 1 }
         k -= 1
-        let keep = Array(moves.prefix(max(0, k)))
+        reset(to: Array(moves.prefix(max(0, k))), statusPrefix: "已悔棋")
+    }
+
+    /// Load an opening-book line and continue play from there.
+    func startFromOpening(_ line: [Int], plies: Int? = nil) {
+        guard !thinking else { return }
+        let k = min(plies ?? line.count, line.count)
+        reset(to: Array(line.prefix(k)), statusPrefix: "已摆上开局前 \(k) 手")
+    }
+
+    /// Rebuild the game at a move prefix (shared by undo and the book) and
+    /// hand the turn to whoever is due -- including triggering the AI.
+    private func reset(to keep: [Int], statusPrefix: String) {
+        aiTask?.cancel()
         position = Position()
         for a in keep { position.play(a) }
         tree = MCTS(position)
@@ -112,13 +125,14 @@ final class GameViewModel: ObservableObject {
         heat = nil
         showHeat = false
         valueBlack = nil
-        gameOver = false
+        gameOver = position.done
+        thinking = false
         statusIsGood = nil
-        if position.toPlay != humanSide {
-            status = "已悔棋。"
+        if !gameOver, position.toPlay != humanSide {
+            status = "\(statusPrefix)。"
             scheduleAITurn()
         } else {
-            status = "已悔棋，轮到你。"
+            status = "\(statusPrefix)，轮到你。"
         }
     }
 

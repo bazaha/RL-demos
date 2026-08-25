@@ -10,9 +10,12 @@
 		0769019DE096765462E81DE2 /* GameCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43AC8E861E16FDEA75A37ED /* GameCore.swift */; };
 		3643645B2F55F7DE3C0FB0BF /* MCTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2615373FEDB62B11492AB849 /* MCTS.swift */; };
 		39BF5801CE867449E3B4F982 /* testvec.json in Resources */ = {isa = PBXBuildFile; fileRef = 20320E0CCF992D8125145459 /* testvec.json */; };
+		6FB3C342E31C42A54222AD17 /* OpeningBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */; };
 		8B6691D7FDDC7CF33A35A673 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E58FE114EC2BF42847440D /* EngineTests.swift */; };
 		92BFF582A0FAF64C1DB5C9C1 /* Evaluator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00625B294B5DFAADC1CC1758 /* Evaluator.swift */; };
 		94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E687F176EF14395A24DA21D /* Gomoku15App.swift */; };
+		9A9BBB5132CEAAF0F66A7F91 /* gomoku_book.json in Resources */ = {isa = PBXBuildFile; fileRef = 03BF2240CC7719F31575FFC5 /* gomoku_book.json */; };
+		9F1813E88A0D05C9499874BA /* BookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D512C57E473A5296DAD598 /* BookView.swift */; };
 		C5E2CDEF9B5DEB2CBEB0450B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00E75BF0D232196785397E68 /* Assets.xcassets */; };
 		E9A46224031C0DE27EC957C4 /* Gomoku15.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */; };
 		EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68AB5E4ACE02965B874DC6C6 /* BoardView.swift */; };
@@ -32,13 +35,16 @@
 /* Begin PBXFileReference section */
 		00625B294B5DFAADC1CC1758 /* Evaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Evaluator.swift; sourceTree = "<group>"; };
 		00E75BF0D232196785397E68 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		03BF2240CC7719F31575FFC5 /* gomoku_book.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = gomoku_book.json; sourceTree = "<group>"; };
 		20320E0CCF992D8125145459 /* testvec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = testvec.json; sourceTree = "<group>"; };
 		258E41B322077128FF742FB1 /* GameViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewModel.swift; sourceTree = "<group>"; };
 		2615373FEDB62B11492AB849 /* MCTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCTS.swift; sourceTree = "<group>"; };
 		4E04C1439D456DB612092446 /* Gomoku15.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Gomoku15.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */ = {isa = PBXFileReference; path = Gomoku15.mlpackage; sourceTree = "<group>"; };
 		68AB5E4ACE02965B874DC6C6 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
+		991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpeningBook.swift; sourceTree = "<group>"; };
 		9E687F176EF14395A24DA21D /* Gomoku15App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Gomoku15App.swift; sourceTree = "<group>"; };
+		A6D512C57E473A5296DAD598 /* BookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookView.swift; sourceTree = "<group>"; };
 		C8E58FE114EC2BF42847440D /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
 		CF40B70652EBCE1322A9BCB9 /* Gomoku15Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = Gomoku15Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		F43AC8E861E16FDEA75A37ED /* GameCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCore.swift; sourceTree = "<group>"; };
@@ -85,11 +91,13 @@
 			isa = PBXGroup;
 			children = (
 				68AB5E4ACE02965B874DC6C6 /* BoardView.swift */,
+				A6D512C57E473A5296DAD598 /* BookView.swift */,
 				00625B294B5DFAADC1CC1758 /* Evaluator.swift */,
 				F43AC8E861E16FDEA75A37ED /* GameCore.swift */,
 				258E41B322077128FF742FB1 /* GameViewModel.swift */,
 				9E687F176EF14395A24DA21D /* Gomoku15App.swift */,
 				2615373FEDB62B11492AB849 /* MCTS.swift */,
+				991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -98,6 +106,7 @@
 			isa = PBXGroup;
 			children = (
 				00E75BF0D232196785397E68 /* Assets.xcassets */,
+				03BF2240CC7719F31575FFC5 /* gomoku_book.json */,
 				20320E0CCF992D8125145459 /* testvec.json */,
 			);
 			path = Resources;
@@ -187,6 +196,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C5E2CDEF9B5DEB2CBEB0450B /* Assets.xcassets in Resources */,
+				9A9BBB5132CEAAF0F66A7F91 /* gomoku_book.json in Resources */,
 				39BF5801CE867449E3B4F982 /* testvec.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -207,12 +217,14 @@
 			buildActionMask = 2147483647;
 			files = (
 				EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */,
+				9F1813E88A0D05C9499874BA /* BookView.swift in Sources */,
 				92BFF582A0FAF64C1DB5C9C1 /* Evaluator.swift in Sources */,
 				0769019DE096765462E81DE2 /* GameCore.swift in Sources */,
 				FA3D6B2F465FD1DFB5ACDB9B /* GameViewModel.swift in Sources */,
 				E9A46224031C0DE27EC957C4 /* Gomoku15.mlpackage in Sources */,
 				94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */,
 				3643645B2F55F7DE3C0FB0BF /* MCTS.swift in Sources */,
+				6FB3C342E31C42A54222AD17 /* OpeningBook.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

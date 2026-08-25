@@ -71,6 +71,17 @@
   .layout { display: grid; grid-template-columns: minmax(0, 640px) minmax(240px, 1fr); gap: 16px; margin-top: 14px; }
   .layout > .card { min-width: 0; }
   @media (max-width: 860px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+  #bookBox { grid-column: 1 / -1; }
+  #bookList { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-top: 6px; }
+  .book-row {
+    border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px;
+    background: var(--surface-2); cursor: pointer; text-align: left; font: inherit;
+    color: var(--text-1); display: block; width: 100%;
+  }
+  .book-row:hover { border-color: var(--s1); }
+  .book-row b { font-size: 13px; }
+  .book-row .bk-stats { color: var(--text-2); font-size: 11.5px; margin-top: 2px; }
+  .book-row .bk-line { color: var(--muted); font-size: 11px; font-family: ui-monospace, Menlo, monospace; margin-top: 2px; }
   .card {
     background: var(--surface-1); border: 1px solid var(--border);
     border-radius: 12px; padding: 14px;
@@ -162,6 +173,18 @@
       <div id="moves"></div>
       <div class="note" id="engNote"></div>
     </div>
+    <div class="card panel" id="bookBox" hidden>
+      <h3>开局库 <small id="bookMeta" style="font-weight:400;color:var(--muted)"></small></h3>
+      <div class="row">
+        <label>摆到</label>
+        <span class="seg" id="segBookDepth">
+          <button data-v="book" class="on">前 8 手</button>
+          <button data-v="full">全部主变</button>
+        </span>
+      </div>
+      <div id="bookList"></div>
+      <div class="note" id="bookNote"></div>
+    </div>
   </div>
 
   <footer id="foot"></footer>
@@ -172,6 +195,7 @@
 "use strict";
 /* ================= constants & embedded data ================= */
 const MANIFEST = __MANIFEST__;
+const BOOK = __BOOK__;
 const TESTVEC = __TESTVEC__;
 const B = MANIFEST.board, N_ACT = B * B;
 const CH = MANIFEST.channels, BLOCKS = MANIFEST.blocks;
@@ -950,25 +974,32 @@ cvs.addEventListener("mousemove", e => {
 cvs.addEventListener("mouseleave", () => { hoverCell = -1; render(); });
 
 btnNew.addEventListener("click", () => { if (!thinking) newGame(); });
+
+/* rebuild the game at a given move prefix; shared by undo and the opening
+   book. Triggers the AI when the rebuilt position is its turn. */
+function restartFromMoves(keep, statusText) {
+  const hs = game ? game.humanSide : humanSide();
+  game = { state: new State(), moves: [], humanSide: hs, tree: null,
+           over: false, winCells: null, heat: null, lastAIV: null };
+  for (const a of keep) { game.state.play(a); game.moves.push(a); }
+  game.tree = new Tree(game.state);
+  showHeat = false; btnHeat.textContent = "AI 视角";
+  statusEl.style.color = "";
+  setV(null);
+  render(); renderMoves(); updateButtons();
+  if (game.state.toPlay !== game.humanSide) {
+    setStatus(statusText || "");
+    setTimeout(aiTurn, 60);
+  } else setStatus((statusText || "") + "轮到你。");
+}
+
 btnUndo.addEventListener("click", () => {
   if (thinking || !game || game.moves.length === 0) return;
   // undo back to the human's previous turn: drop trailing AI move + human move
   let k = game.moves.length;
   if (game.state.toPlay === game.humanSide || game.over) k -= 1;  // AI moved last
   k -= 1;
-  const keep = game.moves.slice(0, Math.max(0, k));
-  const hs = game.humanSide;
-  game = { state: new State(), moves: [], humanSide: hs, tree: null,
-           over: false, winCells: null, heat: null, lastAIV: null };
-  for (const a of keep) { game.state.play(a); game.moves.push(a); }
-  game.tree = new Tree(game.state);
-  statusEl.style.color = "";
-  setV(null);
-  render(); renderMoves(); updateButtons();
-  // undoing as white can rewind to an AI-to-move position (even the empty
-  // board); nothing else re-triggers the AI, so do it here
-  if (game.state.toPlay !== game.humanSide) { setStatus("已悔棋。"); setTimeout(aiTurn, 60); }
-  else setStatus("已悔棋，轮到你。");
+  restartFromMoves(game.moves.slice(0, Math.max(0, k)), "已悔棋，");
 });
 btnHeat.addEventListener("click", () => {
   showHeat = !showHeat;
@@ -1113,6 +1144,59 @@ function renderMoves() {
 })();
 window.addEventListener("resize", () => render());
 
+/* ================= opening book panel ================= */
+function loadOpening(op, mode) {
+  if (thinking) return false;
+  const plies = mode === "full" ? op.line.length : Math.min(op.ply_book, op.line.length);
+  restartFromMoves(op.line.slice(0, plies), `已摆上「${op.name}」前 ${plies} 手。`);
+  return true;
+}
+(function bookInit() {
+  if (!BOOK || !(BOOK.openings || []).length) return;
+  const box = document.getElementById("bookBox");
+  box.hidden = false;
+  const src = BOOK.source || {};
+  document.getElementById("bookMeta").textContent =
+    `· 采样自 ${(src.games || 0).toLocaleString()} 局 iter040 自对弈`;
+  const note = document.getElementById("bookNote");
+  note.textContent =
+    `这些是模型自我对弈中最常走且黑方战绩最好的开局（8 重对称归一后统计,主变按最高频续着延伸）。` +
+    `注意:这是 iter040 的"开局观"而非客观棋理;该模型自对弈黑方总胜率 ` +
+    `${((src.black_overall_winrate || 0) * 100).toFixed(0)}%,黑胜率高首先反映先手优势;` +
+    `胜率统计的对局采用前 ${src.temp_moves ?? 8} 手温度采样、其余手近似最优的走法。点击任意一条摆上棋盘接着下。`;
+  const list = document.getElementById("bookList");
+  function depthMode() {
+    return document.querySelector("#segBookDepth .on").dataset.v;
+  }
+  document.getElementById("segBookDepth").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    b.parentElement.querySelectorAll("button").forEach(x =>
+      x.classList.toggle("on", x === b));
+  });
+  for (const op of BOOK.openings) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "book-row";
+    const b = document.createElement("b");
+    b.textContent = `${op.id.replace("op", "#")} ${op.name}`;
+    row.appendChild(b);
+    const st = document.createElement("div");
+    st.className = "bk-stats";
+    st.textContent = `黑胜率 ${(op.winrate_black * 100).toFixed(1)}% · ${op.n.toLocaleString()} 局`
+      + (op.v_black && op.v_black.length
+         ? ` · 模型评估 ${(((op.v_black[op.v_black.length - 1]) + 1) / 2 * 100).toFixed(0)}%`
+         : "");
+    row.appendChild(st);
+    const ln = document.createElement("div");
+    ln.className = "bk-line";
+    ln.textContent = op.line.map((a, i) => (i % 2 ? "○" : "●") + coordName(a)).join(" ");
+    row.appendChild(ln);
+    row.addEventListener("click", () => loadOpening(op, depthMode()));
+    list.appendChild(row);
+  }
+})();
+
 /* chips + boot */
 (function boot() {
   const chips = document.getElementById("chips");
@@ -1168,6 +1252,7 @@ window.__PLAY = {
   aiTurn, state: () => game, forward, State, Tree, aiMove,
   cpuTrunk, glTrunk: GL ? GL.trunk : null, heads, encBuf, selfTest,
   svc: () => SERVICE, probeService,
+  loadOpening, book: () => BOOK,
 };
 </script>
 </body>

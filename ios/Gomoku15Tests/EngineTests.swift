@@ -96,3 +96,40 @@ final class EngineTests: XCTestCase {
         XCTAssertGreaterThan(r.value, 0.8, "a won position must read as won")
     }
 }
+
+final class BookTests: XCTestCase {
+    func testBookLoadsAndLinesAreLegal() throws {
+        guard let book = OpeningBook.load() else {
+            return XCTFail("bundled gomoku_book.json failed to load")
+        }
+        XCTAssertEqual(book.board, Rules.board)
+        XCTAssertFalse(book.openings.isEmpty)
+        for op in book.openings {
+            XCTAssertGreaterThanOrEqual(op.line.count, op.ply_book)
+            XCTAssertEqual(op.n, op.black_wins + op.white_wins + op.draws)
+            let pos = Position()
+            for a in op.line {
+                XCTAssertTrue(a >= 0 && a < Rules.cells && pos.board[a] == 0,
+                              "\(op.id): illegal move \(a)")
+                XCTAssertFalse(pos.done, "\(op.id): line continues past game end")
+                pos.play(a)
+            }
+            if let v = op.v_black {
+                XCTAssertEqual(v.count, op.line.count)
+                XCTAssertTrue(v.allSatisfy { $0 >= -1.0 && $0 <= 1.0 })
+            }
+        }
+    }
+
+    @MainActor
+    func testStartFromOpeningRebuildsPosition() throws {
+        guard let book = OpeningBook.load(), let op = book.openings.first else {
+            return XCTFail("no book")
+        }
+        let vm = GameViewModel()
+        vm.startFromOpening(op.line, plies: op.ply_book)
+        XCTAssertEqual(vm.moves, Array(op.line.prefix(op.ply_book)))
+        let stones = vm.board.filter { $0 != 0 }.count
+        XCTAssertEqual(stones, op.ply_book)
+    }
+}

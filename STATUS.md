@@ -1,6 +1,6 @@
 # STATUS.md — 任务与训练状态快照
 
-> 快照时间：**2026-08-18**。本文件是跨机器交接用的状态账本：**做到哪了、产物在哪、接下来做什么**。
+> 快照时间：**2026-08-26**。本文件是跨机器交接用的状态账本：**做到哪了、产物在哪、接下来做什么**。
 > "怎么做"（两机工作流、镜像、坑）的权威在 [CLAUDE.md](CLAUDE.md)，本文件不重复，只在需要处引用。
 > 在新机器上恢复工作：直接读本文件 §4；让 Claude Code 接手时，它会自动加载 CLAUDE.md，再把本文件读一遍即可获得全部上下文。
 
@@ -18,6 +18,7 @@
 | 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
 | VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
 | iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;**iPad Pro M5 实测 400 sims 0.3-0.4s、1600 sims 1.3s（~0.8ms/sim,全栈最快）** |
+| 开局库（网页 + iOS 双端） | ✅ 完成 2026-08-26（分支 `opening-book`） | `results/book/gomoku_book.json` + 双端 UI | 5 万局自对弈挖出 17 条;流水线与坑见 CLAUDE.md「开局库」 |
 | Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
 
 当前 node09 上跑着一个容器：`az_serve`（推理服务,GPU 0,只绑回环,`docker rm -f az_serve` 可停）；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
@@ -60,6 +61,7 @@
 - [x] 2026-08-18 离线硬探针（`eval_gomoku_hard_probes.py`,4 族 × 2 向,诱饵与正解分离、构造期校验器证明）。三个发现:①浅战术（≤3 手强制,含毒化冲四）iter5 起 raw 全对、零上钩——饱和是真实能力,此后的 Elo 增长不在浅战术里;②必胜局面的 value 置信是晚熟信号,+0.64(iter5)→+1.00(iter35),iter25_tr 曾出现"下对棋却判 -0.91";③HV2 风格拐点与 iter25 温度干预精确对齐:干预前全走直接双威胁 (5,10),干预后全走保先占毒点 (12,12),两者皆客观胜着。教训:判卷 good 集必须=全部客观胜着（_vcf_starts）,窄判卷曾把更聪明的下法误判成回退
 - [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）
 - [x] 2026-08-18 人机对战页全链路（导出→WebGL2 推理→JS MCTS→对拍验证→交互验证）,抓修 GPU GroupNorm 单遍方差、纹理单元 clobber、aiTurn 回合守卫、执白悔棋死局等 9 个 bug
+- [x] 2026-08-26 开局库（分支 `opening-book`,四脚本流水线 `book_selfplay_mass/check/mine/annotate` + 双端 UI）:node09 5 万局 5.2h(黑胜 97.7%,假认输 1/2455)→ 8 重对称归一 K=4 分组挖出 17 条(n 100-2446,黑胜率 80.6-97.7%)→ MPS 标注 v_black → 网页 `#bookBox` 面板 + iOS `BookView`(一键摆盘接着下,BookTests 校验合法重放)。K/MIN_N 由 10.8k 局中途预演定档;命名取前 4 手防重名;详见 CLAUDE.md「开局库」
 
 ### Backlog（剩余工作：是什么、解决什么问题）
 
@@ -101,8 +103,7 @@ served 模式下 worker 纯 CPU、权重只进 n_GPU 个 server、前向与本�
 
 **3. 人机对战页小增强 —— 纯产品体验，无研究价值**
 
-AI 落子温度档（现在 argmax 确定性，同样下法必得同一局，会被单一克制线路刷穿；`AZPlayer` 的 `temp` 参数现成）、
-开局库/让子、移动端触控（触屏没有 hover 幽灵子）。
+开局库已做完（2026-08-26,见账本）。剩：AI 落子温度档（现在 argmax 确定性，同样下法必得同一局，会被单一克制线路刷穿；`AZPlayer` 的 `temp` 参数现成）、让子、移动端触控（触屏没有 hover 幽灵子）。
 
 ### 未列入 backlog 但需要知道的
 
