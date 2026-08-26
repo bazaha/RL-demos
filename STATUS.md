@@ -15,6 +15,7 @@
 | **Phase-1 主线：15×15 单臂 40 轮** | ✅ 完成 2026-08-17 | `report/gomoku15.html` | Elo +1,639;含一次已验证的训练病理与干预,见 §2 |
 | 人机对战页（浏览器内推理+MCTS） | ✅ 完成 2026-08-18 | `report/gomoku_play.html`（28 MB） | 引擎与训练端对拍 ≤2e-6 |
 | 本地推理服务（Mac MPS / node09 CUDA docker） | ✅ 完成 2026-08-18 | `scripts/serve_gomoku.py` + `run_gomoku_serve.sh` | 页面自动探测,解锁 1600 sims;400 sims ≈ 0.8 s |
+| 原生 Core ML / ANE 引擎（iOS/macOS） | ✅ 完成 2026-08-20 | `scripts/export_gomoku_coreml.py` + `ios/GomokuEngine/` | ANE batch=1 0.665 ms（网页 78 ms）;400 模拟一手 264 ms;算子 100% 在 ANE |
 | 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
 | VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
 | iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;**iPad Pro M5 实测 400 sims 0.3-0.4s、1600 sims 1.3s（~0.8ms/sim,全栈最快）** |
@@ -59,6 +60,7 @@
 - [x] 2026-08-21 iOS App（分支 `ios-app`,`ios/` 目录）:iter040 → CoreML fp16 mlprogram(`export_gomoku_coreml.py`,Mac 上对拍 5 向量全绿,最差 1.8e-3);Swift 移植 State/MCTS(与 trainer 逐语义一致)+ SwiftUI 双端自适应界面;XCTest 全绿(规则/CoreML parity/战术);iPhone 17 Pro Max 与 iPad Pro M5 模拟器截图验证。装真机:Xcode 开 `ios/Gomoku15.xcodeproj`,设置签名 Team 后 Run;App 内徽章显示引擎校验与每手 ms
 - [x] 2026-08-19 VCF 求解器基线（`eval_gomoku_vcf_baseline.py`:成五>封五>VCF(5)>拆双威胁>规则贪心,全复用校验器;AZ 侧温度 0.3,每检查点 12 局）。得分曲线 0.00→0.50→0.42→0.42→0.92→0.92→1.00→0.92→1.00:**量程 30 轮**(rule-greedy 只有 15),且有结构——冲锋流期(iter10-15)反而输给纯战术机器(0.42),iter20 起进攻深度超出其 2 手防守视界。强网络的零星败局是长对局末段漏掉 5 深 VCF(iter035 败局:45 手,第 39 手失守),**400 sims 下的 VCF 盲区真实存在但罕见**。`resumed_at` 一行修复同批完成
 - [x] 2026-08-18 离线硬探针（`eval_gomoku_hard_probes.py`,4 族 × 2 向,诱饵与正解分离、构造期校验器证明）。三个发现:①浅战术（≤3 手强制,含毒化冲四）iter5 起 raw 全对、零上钩——饱和是真实能力,此后的 Elo 增长不在浅战术里;②必胜局面的 value 置信是晚熟信号,+0.64(iter5)→+1.00(iter35),iter25_tr 曾出现"下对棋却判 -0.91";③HV2 风格拐点与 iter25 温度干预精确对齐:干预前全走直接双威胁 (5,10),干预后全走保先占毒点 (12,12),两者皆客观胜着。教训:判卷 good 集必须=全部客观胜着（_vcf_starts）,窄判卷曾把更聪明的下法误判成回退
+- [x] 2026-08-20 原生 Core ML 导出 + Swift 引擎骨架（`export_gomoku_coreml.py` 三项验收:testvec 对拍 maxΔ 1.8e-3、**344 个算子全部 preferred=ANE**（GroupNorm 不分段,这条是这条路最大的未知数）、各 compute unit 延迟;`ios/GomokuEngine/` SwiftPM 包 11 个测试全过）。**同机同权重 batch=1:WebGL2 78 ms → Core ML ANE 0.665 ms,118×**;端到端 400 模拟一手 264 ms。两个必须显式做的事:加载要 `.cpuAndNeuralEngine`（默认 `.all` 会挑 GPU,慢 4.3 倍）、Swift 要 `-c release`（debug 慢 1.8 倍）。设备估算未在真机验证
 - [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）
 - [x] 2026-08-18 人机对战页全链路（导出→WebGL2 推理→JS MCTS→对拍验证→交互验证）,抓修 GPU GroupNorm 单遍方差、纹理单元 clobber、aiTurn 回合守卫、执白悔棋死局等 9 个 bug
 - [x] 2026-08-26 开局库（分支 `opening-book`,四脚本流水线 `book_selfplay_mass/check/mine/annotate` + 双端 UI）:node09 5 万局 5.2h(黑胜 97.7%,假认输 1/2455)→ 8 重对称归一 K=4 分组挖出 17 条(n 100-2446,黑胜率 80.6-97.7%)→ MPS 标注 v_black → 网页 `#bookBox` 面板 + iOS `BookView`(一键摆盘接着下,BookTests 校验合法重放)。K/MIN_N 由 10.8k 局中途预演定档;命名取前 4 手防重名;详见 CLAUDE.md「开局库」
@@ -101,7 +103,9 @@ served 模式下 worker 纯 CPU、权重只进 n_GPU 个 server、前向与本�
 - 判据会饱和：固定基线 15 轮内全满 → 改比"到达固定强度用了几轮"，标尺用锚点 / VCF 基线这类不饱和的
 - 种子方差从没测过：±3.9pp 只覆盖对局噪声，单种子运气可能比效应还大 → 每臂 ≥3 种子
 
-**3. 人机对战页小增强 —— 纯产品体验，无研究价值**
+**3. 原生 App / 人机对战页小增强 —— 纯产品体验，无研究价值**
+
+引擎侧已经齐了（`ios/GomokuEngine/`，无 UI）；缺的是棋盘界面、悔棋、AI 视角热度图，以及真机跑一次 `testSearchThroughput` 把设备估算换成实测。网页版那边：
 
 开局库已做完（2026-08-26,见账本）。剩：AI 落子温度档（现在 argmax 确定性，同样下法必得同一局，会被单一克制线路刷穿；`AZPlayer` 的 `temp` 参数现成）、让子、移动端触控（触屏没有 hover 幽灵子）。
 
@@ -140,7 +144,9 @@ rsync -az 'node09:~/h20_validation_20260724/results/*.json' 'node09:~/h20_valida
 | 人机对战页（权重已导出时） | `python3 scripts/gen_gomoku_play.py` |
 | VCF 基线评测 | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 python scripts/eval_gomoku_vcf_baseline.py` |
 | 硬探针评测 + 可视化 | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 python scripts/eval_gomoku_hard_probes.py`;本地 `python3 scripts/gen_probes_report.py` → `report/gomoku_probes.html` |
-| 推理服务（Mac,需一次 `uv venv` 装 torch,见 CLAUDE.md） | `.venv-serve/bin/python scripts/serve_gomoku.py` |
+| Core ML 导出（Mac,先 `uv sync --group coreml`） | `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 uv run python scripts/export_gomoku_coreml.py` |
+| 原生引擎测试（需先导出模型） | `GOMOKU_MODEL=$PWD/results/coreml_export/GomokuAZ_b1.mlpackage swift test -c release --package-path ios/GomokuEngine` |
+| 推理服务（Mac,首次先 `uv sync`,见 CLAUDE.md） | `uv run python scripts/serve_gomoku.py` |
 | 推理服务（node09 + 隧道） | node09 上 `bash scripts/run_gomoku_serve.sh`;Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` |
 | 人机对战页（从检查点重导权重） | 容器内 `AZ_BOARD=15 AZ_CH=192 AZ_BLOCKS=12 CAL_CKPT=results/gomoku_ckpt_p15/iter040.pt python scripts/export_gomoku_web.py`,rsync 回 `results/web_export/` 再本地组装 |
 

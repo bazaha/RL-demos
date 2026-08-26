@@ -6,8 +6,17 @@ data/
 results/gomoku_ckpt_*/**
 !results/gomoku_ckpt_p15/iter040.pt
 
+# Core ML export: the .mlpackage is 21 MB and regenerable from iter040.pt in
+# about a minute, so only the acceptance record goes in git
+results/coreml_export/**
+!results/coreml_export/coreml_report.json
+
+# SwiftPM build products
+ios/**/.build/
+
 # scratch
 __pycache__/
 *.pid
 .DS_Store
 .venv-serve/
+.venv/

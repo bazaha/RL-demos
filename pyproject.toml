@@ -1,0 +1,43 @@
+# uv 项目配置 —— 本仓库【本地 Mac 侧】的环境。node09 那边不用 uv：训练/评测跑在
+# 预装好 torch 的 docker 镜像里（见 CLAUDE.md「Two-machine workflow」）。
+#
+# 依赖分三层（对应 STATUS.md §4 的前置条件）：
+#   1. 报告生成 scripts/gen_*.py —— 纯 stdlib，任意 python3 直接跑，不需要本环境
+#   2. AlphaZero 工具链 serve / eval_* / export / calib_* / trainer —— torch + numpy，
+#      即本文件的默认依赖；Mac 上走 MPS
+#   3. 通路验证 demo（CIFAR-10 / CartPole）—— 额外几个库，只在 node09 容器内跑，
+#      镜像里已自带；列在 container-demos 组里仅为记录完整依赖面
+#
+# 常用命令：
+#   uv sync                              # 建 .venv 并装第 2 层（首次会下载 ~1.5 GB torch）
+#   uv run python scripts/serve_gomoku.py
+#   uv sync --group container-demos      # 需要第 3 层时（本地基本用不到）
+#   uv sync --group coreml               # 导出 Core ML 模型时
+
+[project]
+name = "rl-demos"
+version = "0"
+description = "GPU 训练通路验证 + AlphaZero 五子棋 demo（本地侧工具环境）"
+requires-python = ">=3.11"
+dependencies = [
+    # serve_gomoku.py 按 cuda > mps > cpu 自动选后端；MPS 需要 torch>=2.4
+    "torch>=2.4",
+    "numpy>=1.26",
+]
+
+[dependency-groups]
+# Core ML 导出（scripts/export_gomoku_coreml.py）——只在 macOS 上用得到
+coreml = ["coremltools>=8.0"]
+container-demos = [
+    "torchvision>=0.19",  # train_dl_cifar10.py
+    "gymnasium>=0.29",    # train_rl_cartpole.py
+    "pandas>=2.2",        # prep_cifar10.py：hf-mirror parquet -> cifar10.npz
+    "pillow>=10.3",       # prep_cifar10.py
+]
+
+[tool.uv]
+# scripts/ 是一组平铺脚本，不是可安装的包：只装依赖，不构建本项目
+package = false
+# 锁文件只解析 macOS——Linux 侧一律走容器镜像。想让 uv 也能在别的平台建环境，
+# 删掉这一行重新 uv lock 即可。
+environments = ["sys_platform == 'darwin'"]

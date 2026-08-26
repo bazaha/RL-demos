@@ -15,8 +15,8 @@ Endpoints (all JSON):
   POST /forward {moves:[int]}
                           -> {policy:[225], value}   (legal-masked softmax)
 
-Run on a MacBook (Apple Silicon -> MPS):
-  .venv-serve/bin/python scripts/serve_gomoku.py
+Run on a Mac (Apple Silicon -> MPS); env comes from pyproject.toml/uv.lock:
+  uv sync && uv run python scripts/serve_gomoku.py
 Run in the node09 container (CUDA), then reach it via an SSH tunnel:
   see scripts/run_gomoku_serve.sh
 
