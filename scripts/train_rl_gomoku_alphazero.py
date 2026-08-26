@@ -63,6 +63,29 @@ DIR_ALPHA = _ef("AZ_DIR_ALPHA", 0.3)
 DIR_EPS = _ef("AZ_DIR_EPS", 0.25)
 TEMP_MOVES = _ei("AZ_TEMP_MOVES", 12)
 
+# --- phase-3 throughput knobs (defaults preserve the old behaviour) ---------
+# playout cap randomization (KataGo): with prob CAP_PROB a move gets the full
+# N_SIMS search and is RECORDED as a training target; otherwise it gets a
+# cheap CAP_SIMS search (no root noise) that only advances the game. 1.0 = off.
+CAP_PROB = _ef("AZ_CAP_PROB", 1.0)
+CAP_SIMS = _ei("AZ_CAP_SIMS", max(64, _ei("AZ_SIMS", 400) // 4))
+# resignation: the mover resigns when its root value stays below -RESIGN_V for
+# RESIGN_N consecutive own moves. A RESIGN_KEEP fraction of games never
+# resigns, and would-have-resigned outcomes there measure the false-resign
+# rate. 0 = off.
+RESIGN = _ei("AZ_RESIGN", 0)
+RESIGN_V = _ef("AZ_RESIGN_V", 0.95)
+RESIGN_N = _ei("AZ_RESIGN_N", 3)
+RESIGN_KEEP = _ef("AZ_RESIGN_KEEP", 0.1)
+# no resigning before this ply: the value head is at its most overconfident in
+# openings (measured: it believes black wins from the empty board), so early
+# counting turns first-player advantage into mislabeled games
+RESIGN_MIN = _ei("AZ_RESIGN_MIN", 16)
+# dead-draw adjudication: end the game as a draw once NEITHER side has any
+# 5-window free of opponent stones (the result is forced regardless of play,
+# so this is lossless). 1 = on.
+DEAD_DRAW = _ei("AZ_DEAD_DRAW", 1)
+
 # rule-guided cold start: beta = BETA0 * max(0, 1 - (it-1)/RULE_ITERS)
 BETA0 = _ef("AZ_BETA0", 0.0)
 RULE_ITERS = _ei("AZ_RULE_ITERS", 20)
@@ -100,6 +123,16 @@ SEED = _ei("AZ_SEED", 42)
 RESUME_ITER = _ei("AZ_RESUME_ITER", 0)
 DEVICE = os.environ.get("AZ_DEVICE", "cuda:0")
 GPUS = [int(g) for g in os.environ.get("AZ_GPUS", "0").split(",") if g != ""]
+# per-GPU inference server mode: one server process per (unique) GPU in AZ_GPUS
+# owns the net and batches NN requests; AZ_WORKERS cpu-only processes walk the
+# trees. Workers hold no weights and no CUDA context, so their count is bound
+# by cores, not by GPU contention. 0 = classic mode (workers own the net).
+SERVED = _ei("AZ_SERVED", 0)
+SERVED_WORKERS = _ei("AZ_WORKERS", 0)     # 0 -> 8 per server GPU
+SRV_MAXPOS = _ei("AZ_SRV_MAXPOS", 384)    # positions per server forward: small
+                                          # batches answer fast, and worker sim
+                                          # cadence is bound by server latency
+SRV_HALF = _ei("AZ_SRV_HALF", 0)          # bf16 server forwards (H20: ~2x)
 OUT_JSON = os.environ.get("AZ_OUT", "results/gomoku_metrics.json")
 CKPT_DIR = os.environ.get("AZ_CKPT", "results/gomoku_ckpt")
 TAG = os.environ.get("AZ_TAG", "az")
@@ -435,11 +468,14 @@ def run_sims(net, trees, n_sims, device, noise_rng=None, beta=0.0):
             if beta > 0.0:
                 bbuf[i] = leaf.state.board
                 tbuf[i] = leaf.state.to_play
-        with torch.no_grad():
-            x = torch.from_numpy(xbuf[:k]).to(device, non_blocking=True)
-            logits, values = net(x)
-            probs = torch.softmax(logits, dim=1).float().cpu().numpy()
-            vals = values.float().cpu().numpy()
+        if hasattr(net, "infer"):   # RemoteEvaluator: forward runs on a server
+            probs, vals = net.infer(xbuf[:k])
+        else:
+            with torch.no_grad():
+                x = torch.from_numpy(xbuf[:k]).to(device, non_blocking=True)
+                logits, values = net(x)
+                probs = torch.softmax(logits, dim=1).float().cpu().numpy()
+                vals = values.float().cpu().numpy()
         if beta > 0.0:
             rp = rule_priors_batch(bbuf[:k], tbuf[:k])
             probs = (1.0 - beta) * probs + beta * rp
@@ -454,19 +490,78 @@ def run_sims(net, trees, n_sims, device, noise_rng=None, beta=0.0):
 # --------------------------------------------------------------------------- #
 # self-play
 # --------------------------------------------------------------------------- #
+_WINDOWS = None
+
+
+def _win_windows():
+    """All 5-cell lines on the board, as an (n_win, 5) array of flat indices."""
+    global _WINDOWS
+    if _WINDOWS is None:
+        w = []
+        for r in range(BOARD):
+            for c in range(BOARD):
+                for dr, dc in DIRS:
+                    r2, c2 = r + 4 * dr, c + 4 * dc
+                    if 0 <= r2 < BOARD and 0 <= c2 < BOARD:
+                        w.append([(r + k * dr) * BOARD + (c + k * dc)
+                                  for k in range(N_IN_ROW)])
+        _WINDOWS = np.array(w, dtype=np.int64)
+    return _WINDOWS
+
+
+def _dead_draw(board):
+    """True when neither side has any 5-window free of opponent stones: the
+    game is a forced draw no matter what is played, so adjudicating it early
+    is lossless (identical winner, shorter game)."""
+    flat = board.reshape(-1)
+    win = _win_windows()
+    black_blocked = (flat[win] == -1).any(axis=1).all()
+    white_blocked = (flat[win] == 1).any(axis=1).all()
+    return black_blocked and white_blocked
+
+
 def selfplay(net, n_games, n_sims, device, rng, temp_moves=TEMP_MOVES, beta=0.0):
-    """Play n_games in lockstep. Returns (X, PI, Z, move_logs, winners, lengths)."""
+    """Play n_games in lockstep.
+
+    Returns (X, PI, Z, move_logs, winners, lengths, stats). Only full-search
+    moves are recorded into X/PI/Z (see CAP_PROB); resigned and adjudicated
+    games end early with the corresponding winner/draw.
+    """
     net.eval()
     trees = [Tree(State()) for _ in range(n_games)]
     recs = [[] for _ in range(n_games)]
     logs = [[] for _ in range(n_games)]
     active = list(range(n_games))
+    # resignation bookkeeping: per game, per player (+1/-1), consecutive
+    # hopeless own moves; no-resign games measure the false-resign rate
+    low_cnt = [{1: 0, -1: 0} for _ in range(n_games)]
+    no_resign = [RESIGN and rng.random() < RESIGN_KEEP for _ in range(n_games)]
+    would_resign = [None] * n_games      # (player, move_i) of first trigger
+    stats = {"resigned": 0, "adjudicated": 0, "noresign_games": int(sum(no_resign)),
+             "false_resigns": 0, "moves_total": 0, "moves_recorded": 0}
     move_i = 0
     while active:
-        run_sims(net, [trees[i] for i in active], n_sims, device,
-                 noise_rng=rng, beta=beta)
+        if CAP_PROB >= 1.0:
+            full, cheap = list(active), []
+        else:
+            full = [i for i in active if rng.random() < CAP_PROB]
+            fset = set(full)
+            cheap = [i for i in active if i not in fset]
+        # root noise belongs to recorded searches only; fresh roots get it
+        # inside run_sims, reused roots need it applied here
+        for i in full:
+            if trees[i].root.expanded:
+                trees[i].apply_noise(rng, DIR_ALPHA, DIR_EPS)
+        if full:
+            run_sims(net, [trees[i] for i in full], n_sims, device,
+                     noise_rng=rng, beta=beta)
+        if cheap:
+            run_sims(net, [trees[i] for i in cheap], CAP_SIMS, device,
+                     noise_rng=None, beta=beta)
+        fset = set(full)
         for i in active:
             t = trees[i]
+            st = t.root.state
             N = t.root.N
             tot = float(N.sum())
             if tot <= 0:  # degenerate; fall back to uniform over legal moves
@@ -474,20 +569,46 @@ def selfplay(net, n_games, n_sims, device, rng, temp_moves=TEMP_MOVES, beta=0.0)
                 pi /= pi.sum()
             else:
                 pi = N.astype(np.float64) / tot
-            recs[i].append((t.root.state.encode().astype(np.int8),
-                            pi.astype(np.float32), t.root.state.to_play))
+            if RESIGN and tot > 0 and move_i >= RESIGN_MIN:
+                q = float(t.root.W.sum()) / tot      # mover's point of view
+                mover = st.to_play
+                low_cnt[i][mover] = low_cnt[i][mover] + 1 if q < -RESIGN_V else 0
+                if low_cnt[i][mover] >= RESIGN_N:
+                    if no_resign[i]:
+                        if would_resign[i] is None:
+                            would_resign[i] = (mover, move_i)
+                    else:
+                        st.winner = -mover
+                        st.done = True
+                        stats["resigned"] += 1
+                        continue
+            if i in fset:
+                recs[i].append((st.encode().astype(np.int8),
+                                pi.astype(np.float32), st.to_play))
             if move_i < temp_moves:
                 a = int(rng.choice(N_ACT, p=pi / pi.sum()))
             else:
                 a = int(N.argmax())
             logs[i].append(a)
             t.advance(a)
-            if t.root.expanded:
-                t.apply_noise(rng, DIR_ALPHA, DIR_EPS)
+            ns = t.root.state
+            if DEAD_DRAW and not ns.done and _dead_draw(ns.board):
+                ns.winner = 0
+                ns.done = True
+                stats["adjudicated"] += 1
         active = [i for i in active if not trees[i].root.state.done]
         move_i += 1
 
+    for i in range(n_games):                # false-resign audit
+        if would_resign[i] is not None:
+            player, _ = would_resign[i]
+            w = trees[i].root.state.winner
+            if w == player or w == 0:
+                stats["false_resigns"] += 1
+
     n_pos = sum(len(r) for r in recs)
+    stats["moves_total"] = sum(len(l) for l in logs)
+    stats["moves_recorded"] = n_pos
     X = np.zeros((n_pos, 4, BOARD, BOARD), dtype=np.int8)
     PI = np.zeros((n_pos, N_ACT), dtype=np.float32)
     Z = np.zeros((n_pos,), dtype=np.float32)
@@ -501,7 +622,7 @@ def selfplay(net, n_games, n_sims, device, rng, temp_moves=TEMP_MOVES, beta=0.0)
             PI[j] = pi
             Z[j] = 0.0 if w == 0 else (1.0 if w == tp else -1.0)
             j += 1
-    return X, PI, Z, logs, winners, lengths
+    return X, PI, Z, logs, winners, lengths, stats
 
 
 # --------------------------------------------------------------------------- #
@@ -523,12 +644,13 @@ def _worker(wid, gpu, task_q, res_q, ch, blocks):
             net.eval()
             rng = np.random.default_rng(seed)
             t0 = time.time()
-            X, PI, Z, logs, winners, lengths = selfplay(
+            X, PI, Z, logs, winners, lengths, sp_stats = selfplay(
                 net, n_games, n_sims, dev, rng, beta=beta)
-            res_q.put((wid, X, PI, Z, logs, winners, lengths, time.time() - t0, None))
+            res_q.put((wid, X, PI, Z, logs, winners, lengths, sp_stats,
+                       time.time() - t0, None))
     except Exception as e:  # surface worker failures instead of hanging the parent
         import traceback
-        res_q.put((wid, None, None, None, None, None, None, 0.0,
+        res_q.put((wid, None, None, None, None, None, None, None, 0.0,
                    f"{e}\n{traceback.format_exc()}"))
 
 
@@ -568,14 +690,192 @@ class SelfPlayPool:
         logs = [g for r in out for g in r[4]]
         winners = [w for r in out for w in r[5]]
         lengths = [l for r in out for l in r[6]]
-        worker_s = [round(r[7], 1) for r in out]
-        return X, PI, Z, logs, winners, lengths, worker_s
+        stats = {}
+        for r in out:
+            for k, v in (r[7] or {}).items():
+                stats[k] = stats.get(k, 0) + v
+        worker_s = [round(r[8], 1) for r in out]
+        return X, PI, Z, logs, winners, lengths, stats, worker_s
 
     def close(self):
         for _ in self.procs:
             self.task_q.put(None)
         for p in self.procs:
             p.join(timeout=30)
+
+
+# --------------------------------------------------------------------------- #
+# served self-play: one inference server per GPU, cpu-only tree workers
+# --------------------------------------------------------------------------- #
+class RemoteEvaluator:
+    """Stands in for the net inside a cpu worker: run_sims dispatches on the
+    presence of .infer, so selfplay() is byte-identical in both modes."""
+
+    def __init__(self, wid, req_q, resp_q):
+        self.wid = wid
+        self.req_q = req_q
+        self.resp_q = resp_q
+
+    def eval(self):
+        pass
+
+    def infer(self, x):
+        self.req_q.put(("infer", self.wid, x))
+        return self.resp_q.get(timeout=600)
+
+
+def _served_server(gpu, ch, blocks, req_q, resp_qs, ack_q):
+    """Owns the net on one GPU; greedily drains the request queue so batches
+    grow to whatever is in flight across all workers, then answers each."""
+    import queue as _q
+    try:
+        dev = f"cuda:{gpu}" if torch.cuda.is_available() else "cpu"
+        if dev != "cpu":
+            torch.cuda.set_device(gpu)
+        net = AZNet(ch, blocks).to(dev)
+        net.eval()
+        while True:
+            msg = req_q.get()
+            stop = False
+            batch = []
+            npos = 0
+            while True:
+                if msg is None:
+                    stop = True
+                elif msg[0] == "weights":
+                    net.load_state_dict({k: v.to(dev) for k, v in msg[1].items()})
+                    net.eval()
+                    ack_q.put((gpu, None))
+                else:
+                    batch.append(msg)
+                    npos += len(msg[2])
+                if stop or npos >= SRV_MAXPOS:
+                    break
+                try:
+                    msg = req_q.get_nowait()
+                except _q.Empty:
+                    break
+            if batch:
+                xs = np.concatenate([m[2] for m in batch])
+                with torch.no_grad():
+                    t = torch.from_numpy(xs).to(dev, non_blocking=True)
+                    if SRV_HALF and dev != "cpu":
+                        with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
+                            logits, v = net(t)
+                    else:
+                        logits, v = net(t)
+                    probs = torch.softmax(logits.float(), dim=1).cpu().numpy()
+                    vals = v.float().cpu().numpy()
+                off = 0
+                for m in batch:
+                    k = len(m[2])
+                    resp_qs[m[1]].put((probs[off:off + k], vals[off:off + k]))
+                    off += k
+            if stop:
+                break
+    except Exception as e:
+        import traceback
+        ack_q.put((gpu, f"{e}\n{traceback.format_exc()}"))
+
+
+def _served_worker(wid, req_qs, resp_q, task_q, res_q, n_srv):
+    """Pure-CPU tree walker: no weights, no CUDA context."""
+    try:
+        torch.set_num_threads(1)
+        ev = RemoteEvaluator(wid, req_qs[wid % n_srv], resp_q)
+        while True:
+            task = task_q.get()
+            if task is None:
+                break
+            n_games, seed, n_sims, beta = task
+            rng = np.random.default_rng(seed)
+            t0 = time.time()
+            X, PI, Z, logs, winners, lengths, sp_stats = selfplay(
+                ev, n_games, n_sims, "cpu", rng, beta=beta)
+            res_q.put((wid, X, PI, Z, logs, winners, lengths, sp_stats,
+                       time.time() - t0, None))
+    except Exception as e:
+        import traceback
+        res_q.put((wid, None, None, None, None, None, None, None, 0.0,
+                   f"{e}\n{traceback.format_exc()}"))
+
+
+class ServedSelfPlayPool:
+    """Same interface as SelfPlayPool; per-iteration weights go to n_gpu
+    servers instead of n_worker processes."""
+
+    def __init__(self, gpus, n_workers, ch, blocks):
+        ctx = mp.get_context("spawn")
+        self.gpus = sorted(set(gpus))
+        self.task_q = ctx.Queue()
+        self.res_q = ctx.Queue()
+        self.ack_q = ctx.Queue()
+        self.req_qs = [ctx.Queue() for _ in self.gpus]
+        self.resp_qs = [ctx.Queue() for _ in range(n_workers)]
+        self.servers = []
+        for i, g in enumerate(self.gpus):
+            p = ctx.Process(target=_served_server,
+                            args=(g, ch, blocks, self.req_qs[i], self.resp_qs,
+                                  self.ack_q), daemon=True)
+            p.start()
+            self.servers.append(p)
+        self.procs = []
+        for wid in range(n_workers):
+            p = ctx.Process(target=_served_worker,
+                            args=(wid, self.req_qs, self.resp_qs[wid],
+                                  self.task_q, self.res_q, len(self.gpus)),
+                            daemon=True)
+            p.start()
+            self.procs.append(p)
+        self.n = n_workers
+
+    def run(self, net, n_games, n_sims, seed, beta, timeout=3600):
+        sd = {k: v.detach().cpu() for k, v in net.state_dict().items()}
+        for q in self.req_qs:
+            q.put(("weights", sd))
+        for _ in self.req_qs:                 # weight barrier before any task
+            g, err = self.ack_q.get(timeout=180)
+            if err is not None:
+                raise RuntimeError(f"inference server on GPU {g} failed: {err}")
+        share = [n_games // self.n] * self.n
+        for i in range(n_games % self.n):
+            share[i] += 1
+        for wid in range(self.n):
+            self.task_q.put((share[wid], seed * 1000 + wid, n_sims, beta))
+        out = []
+        for _ in range(self.n):
+            r = self.res_q.get(timeout=timeout)
+            if r[-1] is not None:
+                raise RuntimeError(f"self-play worker {r[0]} failed: {r[-1]}")
+            out.append(r)
+        out.sort(key=lambda r: r[0])
+        X = np.concatenate([r[1] for r in out])
+        PI = np.concatenate([r[2] for r in out])
+        Z = np.concatenate([r[3] for r in out])
+        logs = [g for r in out for g in r[4]]
+        winners = [w for r in out for w in r[5]]
+        lengths = [l for r in out for l in r[6]]
+        stats = {}
+        for r in out:
+            for k, v in (r[7] or {}).items():
+                stats[k] = stats.get(k, 0) + v
+        worker_s = [round(r[8], 1) for r in out]
+        return X, PI, Z, logs, winners, lengths, stats, worker_s
+
+    def close(self):
+        for _ in self.procs:
+            self.task_q.put(None)
+        for q in self.req_qs:
+            q.put(None)
+        for p in self.procs + self.servers:
+            p.join(timeout=30)
+
+
+def make_pool(gpus, ch, blocks):
+    if SERVED:
+        n_workers = SERVED_WORKERS or 8 * len(set(gpus))
+        return ServedSelfPlayPool(gpus, n_workers, ch, blocks)
+    return SelfPlayPool(gpus, ch, blocks)
 
 
 # --------------------------------------------------------------------------- #
@@ -1130,7 +1430,7 @@ def main():
     for _ in range(RESUME_ITER):   # replay the LR schedule up to the resume point
         sched.step()
     buf = Buffer(BUFFER_CAP)
-    pool = SelfPlayPool(GPUS, CHANNELS, BLOCKS)
+    pool = make_pool(GPUS, CHANNELS, BLOCKS)
 
     M = {
         "algo": "AlphaZero", "tag": TAG,
@@ -1143,6 +1443,10 @@ def main():
         "cfg": {"iters": ITERS, "games_per_iter": GAMES_PER_ITER, "sims": N_SIMS,
                 "c_puct": C_PUCT, "dirichlet": [DIR_ALPHA, DIR_EPS],
                 "temp_moves": TEMP_MOVES, "batch": BATCH,
+                "cap_prob": CAP_PROB, "cap_sims": CAP_SIMS,
+                "resign": RESIGN, "resign_v": RESIGN_V, "resign_n": RESIGN_N,
+                "resign_keep": RESIGN_KEEP, "resign_min": RESIGN_MIN,
+                "dead_draw": DEAD_DRAW,
                 "train_steps": TRAIN_STEPS, "lr": LR, "buffer": BUFFER_CAP,
                 "eval_sims": EVAL_SIMS, "board": BOARD, "n_in_row": N_IN_ROW,
                 "beta0": BETA0, "rule_iters": RULE_ITERS, "seed": SEED},
@@ -1236,7 +1540,7 @@ def main():
             beta = beta_at(it)
 
             t0 = time.time()
-            X, PI, Z, logs, winners, lengths, worker_s = pool.run(
+            X, PI, Z, logs, winners, lengths, sp_stats, worker_s = pool.run(
                 net, GAMES_PER_ITER, N_SIMS, SEED + it, beta)
             t1 = time.time()
             M["phases"].append({"kind": "selfplay", "iter": it, "t0": t0, "t1": t1})
@@ -1291,13 +1595,23 @@ def main():
                 "black_wins": black_w, "white_wins": white_w, "draws": draws,
                 "selfplay_s": round(t1 - t0, 2), "train_s": round(t3 - t2, 2),
                 "worker_s": worker_s,
+                "resigned": int(sp_stats.get("resigned", 0)),
+                "adjudicated": int(sp_stats.get("adjudicated", 0)),
+                "false_resigns": int(sp_stats.get("false_resigns", 0)),
+                "noresign_games": int(sp_stats.get("noresign_games", 0)),
+                "moves_total": int(sp_stats.get("moves_total", 0)),
             }
             M["iterations"].append(rec)
+            extra = ""
+            if RESIGN or CAP_PROB < 1.0 or rec["adjudicated"]:
+                extra = (f" | rec {len(X)}/{rec['moves_total']}"
+                         f" rsn {rec['resigned']} adj {rec['adjudicated']}"
+                         f" fr {rec['false_resigns']}/{rec['noresign_games']}")
             print(f"[{TAG} iter {it}/{ITERS}] b={beta:.3f} loss {rec['total_loss']:.4f} "
                   f"(p {rec['policy_loss']:.4f} v {rec['value_loss']:.4f}) "
                   f"ent {rec['entropy']:.3f} ev {ev:+.3f} | len {rec['avg_len']:.1f} "
                   f"B/W/D {black_w}/{white_w}/{draws} | sp {rec['selfplay_s']:.0f}s "
-                  f"tr {rec['train_s']:.0f}s", flush=True)
+                  f"tr {rec['train_s']:.0f}s{extra}", flush=True)
 
             for gi in (0, 1):
                 M["sample_games"].append({

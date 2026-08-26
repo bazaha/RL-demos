@@ -1,6 +1,6 @@
 # STATUS.md — 任务与训练状态快照
 
-> 快照时间：**2026-08-18**。本文件是跨机器交接用的状态账本：**做到哪了、产物在哪、接下来做什么**。
+> 快照时间：**2026-08-26**。本文件是跨机器交接用的状态账本：**做到哪了、产物在哪、接下来做什么**。
 > "怎么做"（两机工作流、镜像、坑）的权威在 [CLAUDE.md](CLAUDE.md)，本文件不重复，只在需要处引用。
 > 在新机器上恢复工作：直接读本文件 §4；让 Claude Code 接手时，它会自动加载 CLAUDE.md，再把本文件读一遍即可获得全部上下文。
 
@@ -17,6 +17,8 @@
 | 本地推理服务（Mac MPS / node09 CUDA docker） | ✅ 完成 2026-08-18 | `scripts/serve_gomoku.py` + `run_gomoku_serve.sh` | 页面自动探测,解锁 1600 sims;400 sims ≈ 0.8 s |
 | 离线硬探针（检查点战术补测） | ✅ 完成 2026-08-18 | `results/gomoku_hard_probes.json` + `report/gomoku_probes.html` | 浅战术 iter5 饱和是真实能力;value 校准与风格拐点见 §3 |
 | VCF 求解器基线（替代 pure-MCTS） | ✅ 完成 2026-08-19 | `results/gomoku_vcf_baseline.json` | 量程 30 轮、中段有结构,见 §3 |
+| iOS 人机对战 App（CoreML/ANE） | ✅ 完成 2026-08-21（分支 `ios-app`） | `ios/`（Xcode 工程 + mlpackage） | 引擎对拍全绿;**iPad Pro M5 实测 400 sims 0.3-0.4s、1600 sims 1.3s（~0.8ms/sim,全栈最快）** |
+| 开局库（网页 + iOS 双端） | ✅ 完成 2026-08-26（分支 `opening-book`） | `results/book/gomoku_book.json` + 双端 UI | 5 万局自对弈挖出 17 条;流水线与坑见 CLAUDE.md「开局库」 |
 | Phase-3 吞吐 / Phase-4 A/B v2 | ⏳ 未开始 | — | backlog 见 §3 |
 
 当前 node09 上跑着一个容器：`az_serve`（推理服务,GPU 0,只绑回环,`docker rm -f az_serve` 可停）；GPU 5 长期被其他用户占用（49 GB,避开）。本地无定时任务/监控残留。
@@ -54,27 +56,41 @@
 - [x] 2026-07-25 9×9 双臂训练、臂间对打评估、`report/gomoku.html`（含测量分辨率修正:臂内梯子只排顺序等,见 CLAUDE.md）
 - [x] 2026-07-31 Phase-0 三组标定;Phase-2 评估体系（AZPlayer 温度采样、锚点池、分级战术题+精确校验器、`run_gomoku15_in_container.sh`）;报告模板新卡与单臂容错;战术校验器"对手无成五点"加固（随机化对抗复核 1,794 声明 0 驳倒）
 - [x] 2026-08-17 Phase-1 40 轮全程（含 2 次在线换配置的断点续跑、1 次温度干预）;`AZ_RESUME_ITER` 断点续跑;`report/gomoku15.html`;发射前多智能体审查修掉 5 处报告硬编码
+- [x] 2026-08-21 iOS App（分支 `ios-app`,`ios/` 目录）:iter040 → CoreML fp16 mlprogram(`export_gomoku_coreml.py`,Mac 上对拍 5 向量全绿,最差 1.8e-3);Swift 移植 State/MCTS(与 trainer 逐语义一致)+ SwiftUI 双端自适应界面;XCTest 全绿(规则/CoreML parity/战术);iPhone 17 Pro Max 与 iPad Pro M5 模拟器截图验证。装真机:Xcode 开 `ios/Gomoku15.xcodeproj`,设置签名 Team 后 Run;App 内徽章显示引擎校验与每手 ms
 - [x] 2026-08-19 VCF 求解器基线（`eval_gomoku_vcf_baseline.py`:成五>封五>VCF(5)>拆双威胁>规则贪心,全复用校验器;AZ 侧温度 0.3,每检查点 12 局）。得分曲线 0.00→0.50→0.42→0.42→0.92→0.92→1.00→0.92→1.00:**量程 30 轮**(rule-greedy 只有 15),且有结构——冲锋流期(iter10-15)反而输给纯战术机器(0.42),iter20 起进攻深度超出其 2 手防守视界。强网络的零星败局是长对局末段漏掉 5 深 VCF(iter035 败局:45 手,第 39 手失守),**400 sims 下的 VCF 盲区真实存在但罕见**。`resumed_at` 一行修复同批完成
 - [x] 2026-08-18 离线硬探针（`eval_gomoku_hard_probes.py`,4 族 × 2 向,诱饵与正解分离、构造期校验器证明）。三个发现:①浅战术（≤3 手强制,含毒化冲四）iter5 起 raw 全对、零上钩——饱和是真实能力,此后的 Elo 增长不在浅战术里;②必胜局面的 value 置信是晚熟信号,+0.64(iter5)→+1.00(iter35),iter25_tr 曾出现"下对棋却判 -0.91";③HV2 风格拐点与 iter25 温度干预精确对齐:干预前全走直接双威胁 (5,10),干预后全走保先占毒点 (12,12),两者皆客观胜着。教训:判卷 good 集必须=全部客观胜着（_vcf_starts）,窄判卷曾把更聪明的下法误判成回退
 - [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）
 - [x] 2026-08-18 人机对战页全链路（导出→WebGL2 推理→JS MCTS→对拍验证→交互验证）,抓修 GPU GroupNorm 单遍方差、纹理单元 clobber、aiTurn 回合守卫、执白悔棋死局等 9 个 bug
+- [x] 2026-08-26 开局库（分支 `opening-book`,四脚本流水线 `book_selfplay_mass/check/mine/annotate` + 双端 UI）:node09 5 万局 5.2h(黑胜 97.7%,假认输 1/2455)→ 8 重对称归一 K=4 分组挖出 17 条(n 100-2446,黑胜率 80.6-97.7%)→ MPS 标注 v_black → 网页 `#bookBox` 面板 + iOS `BookView`(一键摆盘接着下,BookTests 校验合法重放)。K/MIN_N 由 10.8k 局中途预演定档;命名取前 4 手防重名;详见 CLAUDE.md「开局库」
 
 ### Backlog（剩余工作：是什么、解决什么问题）
 
 **先说决策点（在 backlog 之外）**：要不要再训一个更强的模型（15×15 更多轮，或 19×19）。
 要 → Phase-3 是第一步、Phase-4 可搭车；不要 → 下面 1、2 都无需启动，只剩第 3 项和"未列入"里的检查点备份两件小事。
 
-**1. Phase-3 吞吐工程 —— 解决"下一次训练跑不起"**
+**1. Phase-3 吞吐工程 —— 前三项已实现并标定（分支 `phase-3-throughput`，2026-08-21）**
 
-self-play 占训练墙钟 80%+。Phase-1 因为装不下，每轮局数被砍到 1,344、只跑 40 轮，最后 5 轮已进平台；
-任何再上规模都以这项为前置。四个子项都有实测依据（见 CLAUDE.md Phase-0/Phase-1 记录）：
+trainer 新增环境变量开关（默认兼容旧行为）：`AZ_CAP_PROB/AZ_CAP_SIMS`（playout cap randomization，
+只有全搜索的手被记录为训练目标并带根噪声）、`AZ_RESIGN/_V/_N/_MIN/_KEEP`（认输 + 16 手护栏 +
+不认输对照组审计假认输率）、`AZ_DEAD_DRAW`（死和裁定，数学上无损，默认开）。
+15×15/iter040/temp10 regime 的消融标定（`results/calib_phase3.jsonl`，单点噪声 ±20%）：
 
-| 子项 | 解决的浪费 | 依据 | 预期收益 |
+| 配置 | games/s | targets/s | 假认输 |
 | --- | --- | --- | --- |
-| playout cap randomization | 每手都花 800 sims，但多数手只需"产生对局"不需要高质量策略目标 | KataGo 标准做法 | 同算力局数 2-3× |
-| 死和裁定 | 双方都不可能成五仍要下满 225 手 | Phase-1 出现过 225 手和棋 | 砍长尾 |
-| 认输阈值 | 必败棋下到底，产出低信息样本 | value 头后期判断准（硬探针证实） | 省时 + 提高决定性样本比例 |
-| 每卡单推理服务进程 | 每卡 4 进程各发小 batch 抢 GPU：15×15 实测比标定慢 2 倍，util 100% 都耗在排队 | Phase-0/1 吞吐记录 | 解锁更大网络 / 19×19 的架构天花板 |
+| cap 0.25 单独 | **2.69×** | 0.40× | — |
+| cap 0.5 + 认输 + 死和 | 1.37× | 0.49× | 0/134 ✓ |
+| cap 0.25 + 认输 + 死和 | 1.96× | 0.31× | 1/134 ✓ |
+| 只认输（护栏 16 手） | ~1× | 0.81× | 0/134 ✓ |
+
+要点：cap 是吞吐大头；**无护栏的认输会和网络的黑必胜偏见共振**（第 7-9 手大批早退,约 7% 错标——
+`AZ_RESIGN_MIN=16` 把假认输压到 0-1/134）；本标定是"强网络短棋"regime,从零训练的早中期（手数 50-60）
+cap 的目标饥荒会轻得多、认输收益更大。下次训练推荐 `CAP_PROB=0.25~0.33 + RESIGN=1(MIN 16) + DEAD_DRAW=1`,
+并按记录目标数下调 `AZ_TRAIN_STEPS` 保持 4-8× 重用。**每卡单推理服务进程：已实现（`AZ_SERVED=1`,同步版）,实测判定不划算,默认关**。
+served 模式下 worker 纯 CPU、权重只进 n_GPU 个 server、前向与本地逐位一致;但 12/24/48 worker、
+小批窗、bf16 五个变体全部钉在 1.05-1.12 games/s（经典 12w = 1.34）——**同步逐 sim 往返（~3-5ms IPC）
+成为每个 worker 的节拍器**,批量红利无从兑现,200+ 手长棋尾部在 batch≈1 下每 sim 都付全额往返。
+要兑现该架构需 async 评估 + 虚拟损失（每树多个在途叶子,Tree/selfplay 重构）——记为后续真实前置。
+**剩余**：async/虚拟损失重构（如需再上规模）+ 用一次从零短跑验证 cap/认输的训练质量不回退。
 
 **2. Phase-4 冷启动 A/B v2 —— 解决"原始问题其实没答完"**
 
@@ -87,8 +103,7 @@ self-play 占训练墙钟 80%+。Phase-1 因为装不下，每轮局数被砍到
 
 **3. 人机对战页小增强 —— 纯产品体验，无研究价值**
 
-AI 落子温度档（现在 argmax 确定性，同样下法必得同一局，会被单一克制线路刷穿；`AZPlayer` 的 `temp` 参数现成）、
-开局库/让子、移动端触控（触屏没有 hover 幽灵子）。
+开局库已做完（2026-08-26,见账本）。剩：AI 落子温度档（现在 argmax 确定性，同样下法必得同一局，会被单一克制线路刷穿；`AZPlayer` 的 `temp` 参数现成）、让子、移动端触控（触屏没有 hover 幽灵子）。
 
 ### 未列入 backlog 但需要知道的
 

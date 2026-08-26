@@ -28,10 +28,10 @@ def main():
     ckpt = os.environ.get("CAL_CKPT", "")
     if ckpt:
         net.load_state_dict(torch.load(ckpt, map_location="cpu"))
-    pool = az.SelfPlayPool(az.GPUS, az.CHANNELS, az.BLOCKS)
+    pool = az.make_pool(az.GPUS, az.CHANNELS, az.BLOCKS)
     try:
         t1 = time.time()
-        X, PI, Z, logs, winners, lengths, worker_s = pool.run(
+        X, PI, Z, logs, winners, lengths, sp_stats, worker_s = pool.run(
             net, az.GAMES_PER_ITER, az.N_SIMS, az.SEED, 0.0)
         t2 = time.time()
     finally:
@@ -40,19 +40,29 @@ def main():
     row = {
         "note": os.environ.get("CAL_NOTE", ""),
         "board": az.BOARD, "channels": az.CHANNELS, "blocks": az.BLOCKS,
-        "sims": az.N_SIMS, "workers": len(az.GPUS),
+        "sims": az.N_SIMS, "workers": pool.n,
+        "served": az.SERVED,
         "games": az.GAMES_PER_ITER,
-        "games_per_worker": round(az.GAMES_PER_ITER / len(az.GPUS), 1),
+        "games_per_worker": round(az.GAMES_PER_ITER / pool.n, 1),
         "ckpt": os.path.basename(ckpt) if ckpt else "random-init",
         "positions": int(len(X)),
         "avg_len": round(float(np.mean(lengths)), 1),
         "max_len": int(max(lengths)),
         "draws": int(sum(1 for w in winners if w == 0)),
+        "resigned": int(sp_stats.get("resigned", 0)),
+        "false_resigns": int(sp_stats.get("false_resigns", 0)),
+        "noresign_games": int(sp_stats.get("noresign_games", 0)),
+        "adjudicated": int(sp_stats.get("adjudicated", 0)),
+        "moves_total": int(sp_stats.get("moves_total", 0)),
+        "moves_recorded": int(sp_stats.get("moves_recorded", len(X))),
         "selfplay_s": round(t2 - t1, 1),
         "startup_s": round(t1 - t0, 1),
         "worker_s_min": min(worker_s), "worker_s_max": max(worker_s),
         "games_per_s": round(az.GAMES_PER_ITER / (t2 - t1), 2),
         "positions_per_s": round(len(X) / (t2 - t1), 1),
+        "moves_per_s": round(sp_stats.get("moves_total", len(X)) / (t2 - t1), 1),
+        "cap_prob": az.CAP_PROB, "cap_sims": az.CAP_SIMS,
+        "resign": az.RESIGN, "dead_draw": az.DEAD_DRAW,
     }
     out = os.environ.get("CAL_OUT", "results/calib_throughput.jsonl")
     with open(out, "a") as f:
