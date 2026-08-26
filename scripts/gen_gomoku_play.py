@@ -12,6 +12,7 @@ import os
 
 SRC = os.environ.get("PLAY_SRC", "results/web_export")
 OUT = os.environ.get("PLAY_OUT", "report/gomoku_play.html")
+BOOK_SRC = os.environ.get("BOOK_SRC", "results/book/gomoku_book.json")
 TEMPLATE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "gomoku_play_template.html")
 
@@ -20,9 +21,12 @@ with open(f"{SRC}/weights_fp16.bin", "rb") as f:
 b64 = base64.b64encode(raw).decode("ascii")
 manifest = open(f"{SRC}/manifest.json").read()
 testvec = open(f"{SRC}/testvec.json").read()
+# opening book is optional: embed null when absent and the panel hides itself
+book = open(BOOK_SRC).read() if os.path.exists(BOOK_SRC) else "null"
 
 html = open(TEMPLATE).read()
-for k, v in (("__MANIFEST__", manifest), ("__TESTVEC__", testvec)):
+for k, v in (("__MANIFEST__", manifest), ("__TESTVEC__", testvec),
+             ("__BOOK__", book)):
     assert k in html, k
     html = html.replace(k, v)
 assert "__WEIGHTS_B64__" in html

@@ -116,6 +116,11 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 
 **这一趟跑出来的答案（2026-07-25，50 轮 × 两条臂）：在这个规模上测不出规则冷启动的优势。** 全程 160 个开局对 / 320 局，rules 得分率 50.9% ± 3.9pp（2 SE）；退火区间内（≤20 轮）53.9% ± 7.7pp，退火之后 49.0% ± 4.0pp，两段之差也在噪声里；联合 Elo 峰值 pure +1737 / rules +1749，逐轮差值在 −114…+94 之间摆动而拟合分辨率是 ±32；"省下的轮次"中位数 −3 轮而换算误差 ±22 轮。规则先验也不额外花时间（50 轮多 1.7 分钟 / 1.5%）。**要在这个题目上真做出差别，得把区分度做出来**：更大的棋盘、更少的每轮 self-play 局数（让早期数据更稀缺、先验更值钱），或者只比"到达某个固定强度用了几轮"而那个强度不能在 15 轮内饱和。
 
+### Phase-3 吞吐（分支 `phase-3-throughput`，2026-08-21，前三项完成）
+
+`selfplay()` 内三个环境变量开关,默认全兼容：`AZ_CAP_PROB`（<1 开启 playout cap randomization,只有全搜索的手进训练目标、带根噪声;便宜手 `AZ_CAP_SIMS` 次模拟只推进对局）、`AZ_RESIGN`（连续 `AZ_RESIGN_N` 次己方根值 < -`AZ_RESIGN_V` 即认输;**必须配 `AZ_RESIGN_MIN`（默认 16）**——value 头开局过度自信,无护栏时白方第 7-9 手大批早退、约 7% 错标;`AZ_RESIGN_KEEP` 比例的对局永不认输,用于审计假认输率,新 JSON 字段 `false_resigns/noresign_games`）、`AZ_DEAD_DRAW`（双方均无对手-free 5 窗即判和,数学无损,默认开）。`selfplay/pool.run` 返回元组多了 stats dict——改签名时同步 `calib_selfplay_point.py` 和 main()。消融数字与 regime 告诫见 STATUS.md backlog #1 与 `results/calib_phase3.jsonl`。
+**每卡单推理服务（`AZ_SERVED=1` + `AZ_WORKERS/AZ_SRV_MAXPOS/AZ_SRV_HALF`）已实现但默认关**:同步版实测平坦在 1.05 games/s（经典 12w=1.34,12→48 worker 无变化,小批窗/bf16 均无效）——每个 sim 一次同步 IPC 往返（~3-5ms）是 worker 的节拍器,长棋尾部 batch≈1 时最伤;server 前向与本地逐位一致（本地 CPU 冒烟 Δ=0）。要兑现需 async+虚拟损失重构。
+
 ### Phase-0 标定（2026-07-31，`run_phase0_calib.sh` → `results/calib_*.jsonl`）
 
 为规划下一轮训练跑的三组标定，`calib_draw_vs_sims.py` / `calib_selfplay_point.py` 都只 import trainer 不改它：
@@ -137,6 +142,16 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **MCTS**：逐语义复刻 trainer 的 `Tree`（PUCT c=3、终局值 mover 视角、backup 逐层翻号——根节点 W/N 已是根方视角,**不要再取负**）。UI 的 `aiTurn` 必须校验"轮到 AI"（悔棋/驱动脚本会制造不是 AI 回合的调用）;执白悔棋可能回滚到 AI 先手局面,悔棋路径要主动re-trigger `aiTurn`
 - **无头验证**：`--use-angle=swiftshader` 下 WebGL 可用但慢 ~50 倍,驱动对局用 sims=0/32,否则 3 手 128 sims 就超 7 分钟（审查 agent 全卡死过一回）;**无头老模式窗口宽度下限 500px**,`--window-size=390` 拍出来的"溢出"是伪影,量 `innerWidth` 确认;DPR 路径用 `--force-device-scale-factor=2` 测
 - 移动端:grid 轨道要 `minmax(0,1fr)` + item `min-width:0`,否则 canvas 固有宽度撑破单列布局
+
+### iOS App（2026-08-21，分支 `ios-app`，`ios/` 目录）
+
+`export_gomoku_coreml.py` 把 iter040 转成 fp16 mlprogram（内部 fp16 保 ANE 资格）,转换脚本自带 Mac 端 CoreML 对拍(同一套 testvec)。Swift 侧 State/MCTS 逐语义复刻 trainer,XCTest 里再对拍一次。构建:`cd ios && xcodegen generate && xcodebuild -scheme Gomoku15 -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test`。真踩过的坑：
+
+- **fp16 mlprogram 的 fp16 输出张量在 iOS 模拟器 CPU 路径上读出全零**（value 正常,policy 全 0）——转换时给 outputs 强制 `dtype=np.float32`（只在出口加 cast,内部仍 fp16）
+- **设备端 MLMultiArray 输出可能是 Float16**,把 dataPointer 按 Float32 绑定会读出 `-6.7e-41` 这类垃圾——必须按 `dataType` 分支读取;输出还有 padding（shape [1,225] strides [256,1]）
+- 模拟器偶发 "Busy / failed preflight checks" 启动失败——`xcrun simctl shutdown all` 后重跑即可;`@MainActor` 类里的纯函数要 `nonisolated` 才能进 XCTest
+- 截图钩子:launch 参数 `-autoplay` 自动下几手(128 sims)并开热力图
+- **真机性能（iPad Pro 11" M5,2026-08-24 实测）**:400 sims 0.3-0.4s、1600 sims 1.3s,合 ~0.8ms/sim——比 Python 栈(MPS/H20 batch-1 均 ~2ms/sim)快一倍以上,Swift 树遍历 + ANE 前向是全项目最快的单局面推理栈;无需算子落位分析
 
 ### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
 
@@ -170,6 +185,22 @@ WebGL2 78 ms、Core ML GPU 2.86 ms、torch MPS 1.66 ms、Core ML ANE 0.665 ms** 
 - 设备估算（**未在真机验证**）：iPad Pro M5 每手 0.2-0.4 s、iPhone 16 Pro Max 0.4-0.8 s。瓶颈在内存带宽
   （21 MB fp16 权重每次前向都要流过,batch=1 约需 50 GB/s,而 A18 Pro 总带宽约 60 GB/s）。
   真机数字用 `swift test --filter testSearchThroughput` 直接量
+### 开局库（2026-08-26，分支 `opening-book`，网页 + iOS 双端）
+
+从 iter040 大批自对弈中挖出的高胜率开局,两端共用一份 `results/book/gomoku_book.json`(17 条,~6 KB)。四步流水线:
+
+1. **生成**(node09):`book_selfplay_mass.py` 复用 trainer 的 `make_pool`/`pool.run`,丢弃训练张量只留 `{"moves","winner","len"}` 增量 JSONL。实跑 5 万局 5.2 h(GPU 1/3/4 × 12 workers,2.7 局/秒;`AZ_SIMS=800 AZ_TEMP_MOVES=8 AZ_CAP_PROB=0.25 AZ_RESIGN=1(MIN 16, KEEP 0.05) AZ_DEAD_DRAW=1`)。黑胜 97.7%,假认输 1/2455;`book_check.py` 做落地校验
+2. **挖掘**(本地,纯 numpy):`book_mine.py` 把每局前 K 手做 8 重二面体归一(变换后棋盘字节取 min、并列取最小 g;按棋盘内容 key,转序自动合并),按归一局面分组统计,Wilson 95% 下界排序,前 4 手同前缀 ≤5 条护栏,组内众数线逐手延伸(支持数 < max(30, 0.1n) 截断)。**改任何变换/统计逻辑先跑 `--selftest`**(对称不变性、植入旋转重复合并、Wilson 手算对拍)
+3. **标注**(本地 MPS):`book_annotate.py` 逐手前向 iter040 写 `v_black[]`(mover 视角转黑方视角),模型评估与经验胜率在 UI 上分开呈现
+4. **嵌入**:网页 `gen_gomoku_play.py` 经 `BOOK_SRC`→`__BOOK__`(缺失嵌 `null`,面板整体 `hidden`);iOS 拷到 `Resources/gomoku_book.json`(XcodeGen 自动打包),`OpeningBook.swift` 解码、`BookView.swift` 列表、点按 `startFromOpening` 摆盘接着下(与悔棋共用 `reset(to:)`/`restartFromMoves`,轮到 AI 会自动应手)
+
+实测校准过的参数与坑:
+
+- **K=4、MIN_N=100 是数据说了算的**:开局弥散远超预期(5 万局在第 4 手就有 16,843 个归一局面;K=8 时 1,200 局 1,185 个组,完全不可用),n≥200 只有 ~10 条、n≥100 得 17 条。中途用 10.8k 局预演投影后才定的档
+- **这是"模型开局观"不是客观棋理**:总黑胜 97.7%(TEMP_MOVES=8 → 第 9 手起近似 argmax,先手转化率极高),条目胜率 80.6%-97.7% 有梯度但都偏高,`avg_len` 是更有区分度的列;两端 UI 的告诫文案必须保留。命名用中性坐标("G8·K9·H7·J6 系",取前 4 手与分组层一致,3 手会重名),不借连珠术语
+- `book_mine.py` 输出路径走 `BOOK_JSON` 环境变量(没有 `--out` 参数);`source.temp_moves` 曾误写成 K,已修
+- iOS `BookTests` 会校验每条线合法重放+计数自洽——它逮住过手搓假书夹具的编造错误,别嫌它严
+- 无头验证对战页书面板时,执白路径要先按"新对局"再切执子(对局中执子选择器锁定是设计行为,不是 bug)
 
 ## Report generation
 
