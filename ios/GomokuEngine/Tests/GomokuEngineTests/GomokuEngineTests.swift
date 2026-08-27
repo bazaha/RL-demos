@@ -202,6 +202,84 @@ final class GomokuEngineTests: XCTestCase {
                      1 / out.elapsed))
         XCTAssertEqual(out.simulations, sims)
         XCTAssertGreaterThan(out.visits.reduce(0, +), 0)
+        // Not a benchmark, a floor. On the ANE this is ~0.75 ms/sim; the GPU
+        // and CPU paths are ~2.9 ms/forward, so 2.0 separates them with room
+        // to spare on a loaded machine and turns a silent 4x regression into a
+        // failure. Skipped where there is no ANE (the simulator has none).
+        if Self.hasNeuralEngine {
+            XCTAssertLessThan(msPerSim, 2.0,
+                              "\(msPerSim) ms/sim — inference is not on the ANE")
+        }
+    }
+
+    static var hasNeuralEngine: Bool {
+        MLModel.availableComputeDevices.contains {
+            if case .neuralEngine = $0 { return true }
+            return false
+        }
+    }
+
+    /// The single highest-leverage assertion in this suite: `.all` looks like
+    /// the obvious value and is what the app used to pass, but the Core ML
+    /// planner then picks the GPU for this GroupNorm graph -- 2.94 ms/forward
+    /// against 0.66 ms (results/coreml_export/coreml_report.json). Nothing else
+    /// in the build would notice.
+    func testDefaultLoadAsksForTheNeuralEngine() async throws {
+        guard let (net, _) = try await loadNet() else {
+            throw XCTSkip("set GOMOKU_MODEL to run the Core ML tests")
+        }
+        XCTAssertEqual(net.computeUnits, .cpuAndNeuralEngine)
+    }
+
+    /// And that asking for it actually buys something, so the constant above
+    /// cannot be right while the deployment is wrong.
+    func testNeuralEngineIsFasterThanCPUOnly() async throws {
+        guard let (net, _) = try await loadNet(),
+              let modelPath = ProcessInfo.processInfo.environment["GOMOKU_MODEL"] else {
+            throw XCTSkip("set GOMOKU_MODEL to run the Core ML tests")
+        }
+        guard Self.hasNeuralEngine else { throw XCTSkip("no Neural Engine on this host") }
+        let cpu = try await AZNet.load(url: URL(fileURLWithPath: modelPath),
+                                       computeUnits: .cpuOnly)
+        let state = GomokuState(config: net.config)
+        func timeOf(_ n: AZNet) throws -> Double {
+            for _ in 0..<10 { _ = try n.evaluate(state) }
+            let t0 = Date()
+            for _ in 0..<100 { _ = try n.evaluate(state) }
+            return Date().timeIntervalSince(t0)
+        }
+        let ane = try timeOf(net), only = try timeOf(cpu)
+        print(String(format: "  ANE %.3f ms/fwd vs CPU-only %.3f ms/fwd (%.2fx)",
+                     ane * 10, only * 10, only / ane))
+        // Measured 2.29x here. That is lower than the exporter's 4.06x because
+        // this times the whole `evaluate` -- encode, predict, masked softmax --
+        // not just the forward. A regression to .all/GPU collapses it to ~1.0x,
+        // so 1.5 separates them without sitting on top of the real number.
+        XCTAssertGreaterThan(only / ane, 1.5,
+                             "the ANE path is not meaningfully faster — is it actually being used?")
+    }
+
+    /// The deleted app-side suite covered all four directions; the package only
+    /// covered two, leaving vertical and anti-diagonal asserted nowhere.
+    func testFiveWinsInEveryDirection() {
+        for (dr, dc) in [(0, 1), (1, 0), (1, 1), (1, -1)] {
+            var s = GomokuState()
+            let r0 = 7 - 2 * dr, c0 = 7 - 2 * dc
+            var filler = 0
+            for k in 0..<5 {
+                XCTAssertFalse(s.isOver, "dir \(dr),\(dc) ended early at \(k)")
+                s.play((r0 + k * dr) * 15 + (c0 + k * dc))
+                if k < 4 {                       // white filler, parked far away
+                    s.play(14 * 15 + filler)
+                    filler += 2
+                }
+            }
+            XCTAssertTrue(s.isOver, "dir \(dr),\(dc)")
+            XCTAssertEqual(s.winner, 1, "dir \(dr),\(dc)")
+            let last = (r0 + 4 * dr, c0 + 4 * dc)
+            XCTAssertEqual(s.winningLine(through: last.0, last.1, player: 1)?.count, 5,
+                           "dir \(dr),\(dc)")
+        }
     }
 
     func testSearchIsDeterministicAtZeroTemperature() async throws {

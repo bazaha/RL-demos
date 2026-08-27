@@ -5,6 +5,7 @@ public enum AZNetError: Error {
     case missingInput(String)
     case missingOutput(String)
     case batchOverflow(requested: Int, capacity: Int)
+    case unexpectedLayout(String)
 }
 
 /// One network evaluation of a position.
@@ -29,6 +30,13 @@ public final class AZNet {
     /// Fixed batch dimension baked into this model file. Export more sizes with
     /// CML_BATCHES if you want to batch leaf evaluations.
     public let batchCapacity: Int
+
+    /// Which compute units this instance was actually loaded with.
+    ///
+    /// Exposed so a test can assert it: `.all` lets the planner pick the GPU
+    /// for this GroupNorm graph (2.94 ms/forward against 0.66 ms on the ANE),
+    /// and nothing else in the build would notice the change.
+    public var computeUnits: MLComputeUnits { model.configuration.computeUnits }
 
     private let model: MLModel
     private let input: MLMultiArray
@@ -101,16 +109,22 @@ public final class AZNet {
             throw AZNetError.missingOutput("value")
         }
 
+        // Core ML may pad rows -- a [1,225] output has been seen with strides
+        // [256,1] on device -- so take the stride instead of assuming n.
+        let rowStride = logits.strides.first?.intValue ?? n
+        guard rowStride >= n else {
+            throw AZNetError.unexpectedLayout("policy_logits row stride \(rowStride) < \(n)")
+        }
+        let logitsF = try Self.readFloats(logits)
+        let valuesF = try Self.readFloats(values)
         var results: [Evaluation] = []
         results.reserveCapacity(states.count)
-        logits.withUnsafeBufferPointer(ofType: Float16.self) { lb in
-            values.withUnsafeBufferPointer(ofType: Float16.self) { vb in
-                for (i, state) in states.enumerated() {
-                    results.append(Evaluation(
-                        policy: Self.maskedSoftmax(logits: lb, offset: i * n,
-                                                   state: state),
-                        value: Float(vb[i])))
-                }
+        logitsF.withUnsafeBufferPointer { lb in
+            for (i, state) in states.enumerated() {
+                results.append(Evaluation(
+                    policy: Self.maskedSoftmax(logits: lb, offset: i * rowStride,
+                                               state: state),
+                    value: valuesF[i]))
             }
         }
         return results
@@ -120,20 +134,42 @@ public final class AZNet {
         try evaluate([state])[0]
     }
 
+    /// Reads an output by its actual dtype.
+    ///
+    /// Binding an `MLMultiArray`'s bytes to the wrong scalar type does not
+    /// throw, it returns garbage -- and `withUnsafeBufferPointer(ofType:)`
+    /// traps outright on a mismatch, which no `do/catch` can recover from. The
+    /// exporter emits fp16 today, but CLAUDE.md records fp32 outputs having
+    /// been mandatory once (fp16 output tensors read back all-zero on the iOS
+    /// simulator's CPU path), so re-applying that workaround has to stay a
+    /// recoverable error rather than a crash.
+    private static func readFloats(_ arr: MLMultiArray) throws -> [Float] {
+        switch arr.dataType {
+        case .float16:
+            return arr.withUnsafeBufferPointer(ofType: Float16.self) { $0.map(Float.init) }
+        case .float32:
+            return arr.withUnsafeBufferPointer(ofType: Float.self) { Array($0) }
+        case .double:
+            return arr.withUnsafeBufferPointer(ofType: Double.self) { $0.map(Float.init) }
+        default:
+            throw AZNetError.unexpectedLayout("output dtype \(arr.dataType.rawValue) is not a float type")
+        }
+    }
+
     /// The model emits raw logits; masking has to happen here, before the
     /// softmax, or occupied cells keep a share of the probability mass.
     private static func maskedSoftmax(
-        logits: UnsafeBufferPointer<Float16>, offset: Int, state: GomokuState
+        logits: UnsafeBufferPointer<Float>, offset: Int, state: GomokuState
     ) -> [Float] {
         let n = state.cells.count
         var maxLogit = -Float.greatestFiniteMagnitude
         for i in 0..<n where state.cells[i] == 0 {
-            maxLogit = max(maxLogit, Float(logits[offset + i]))
+            maxLogit = max(maxLogit, logits[offset + i])
         }
         var p = [Float](repeating: 0, count: n)
         var sum: Float = 0
         for i in 0..<n where state.cells[i] == 0 {
-            let e = expf(Float(logits[offset + i]) - maxLogit)
+            let e = expf(logits[offset + i] - maxLogit)
             p[i] = e
             sum += e
         }

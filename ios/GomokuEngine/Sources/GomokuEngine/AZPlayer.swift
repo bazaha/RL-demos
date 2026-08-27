@@ -37,6 +37,14 @@ public actor AZPlayer {
     private let net: AZNet
     private var tree: Tree
     private var rng: any RandomNumberGenerator
+    /// Bumped by every call that replaces or advances the tree.
+    ///
+    /// `think` suspends at `Task.yield()`, and an actor releases its lock at a
+    /// suspension point -- so `play`/`rewind`/`reset` from another task can land
+    /// in the middle of a live search and swap the tree out from under it. The
+    /// search checks this across each yield and abandons the run rather than
+    /// keep walking a tree that is no longer the one it started on.
+    private var treeGeneration = 0
 
     public let config: GomokuConfig
 
@@ -51,10 +59,14 @@ public actor AZPlayer {
 
     public func reset(to state: GomokuState? = nil) {
         tree = Tree(state: state ?? GomokuState(config: config))
+        treeGeneration &+= 1
     }
 
     /// Plays a move and keeps the matching subtree.
-    public func play(_ action: Int) { tree.advance(action) }
+    public func play(_ action: Int) {
+        tree.advance(action)
+        treeGeneration &+= 1
+    }
 
     /// Rebuilds the position from a move list. Use this for undo: the tree
     /// cannot walk backwards, so undo means replay.
@@ -62,6 +74,7 @@ public actor AZPlayer {
         var s = GomokuState(config: config)
         for m in moves { s.play(m) }
         tree = Tree(state: s)
+        treeGeneration &+= 1
     }
 
     /// Runs `simulations` PUCT simulations and picks a move.
@@ -88,8 +101,14 @@ public actor AZPlayer {
                                 elapsed: 0)
         }
 
+        // the root evaluation is needed either way; keep its value so the
+        // zero-simulation level can still report the network's own read of the
+        // position instead of a placeholder
+        var rootValue: Float?
         if !root.isExpanded {
-            root.expand(prior: try net.evaluate(root.state).policy)
+            let eval = try net.evaluate(root.state)
+            root.expand(prior: eval.policy)
+            rootValue = eval.value
         }
 
         if simulations <= 0 {
@@ -98,12 +117,15 @@ public actor AZPlayer {
             for i in 0..<root.state.cells.count where root.state.cells[i] == 0 {
                 if root.prior[i] > best { best = root.prior[i]; action = i }
             }
-            return SearchResult(action: action, value: 0, visits: [],
+            // mover's point of view, the same convention as `Tree.root.q`
+            let value = try rootValue ?? net.evaluate(root.state).value
+            return SearchResult(action: action, value: value, visits: [],
                                 simulations: 0,
                                 elapsed: Date().timeIntervalSince(start))
         }
 
         var done = 0
+        let generation = treeGeneration
         for i in 0..<simulations {
             let (path, leaf, terminal) = tree.select()
             if let tv = terminal {
@@ -115,10 +137,19 @@ public actor AZPlayer {
             }
             done = i + 1
             if done % yieldEvery == 0 {
-                progress?(done, simulations)
+                // check before reporting: a cancelled search's last act should
+                // not be to enqueue a UI update that lands after the reset
                 if Task.isCancelled { break }
+                progress?(done, simulations)
                 await Task.yield()
+                // someone reset/advanced the tree across that suspension
+                if treeGeneration != generation { break }
             }
+        }
+        guard treeGeneration == generation else {
+            return SearchResult(action: -1, value: 0, visits: [],
+                                simulations: done,
+                                elapsed: Date().timeIntervalSince(start))
         }
 
         let action = selectMove(temperature: temperature)

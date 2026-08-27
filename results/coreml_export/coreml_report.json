@@ -110,27 +110,27 @@
    "bench": [
     {
      "unit": "ANE",
-     "load_s": 0.867,
-     "ms_per_infer": 0.665,
-     "ms_per_position": 0.6651
+     "load_s": 0.855,
+     "ms_per_infer": 0.664,
+     "ms_per_position": 0.6641
     },
     {
      "unit": "GPU",
-     "load_s": 0.204,
-     "ms_per_infer": 2.862,
-     "ms_per_position": 2.8618
+     "load_s": 0.207,
+     "ms_per_infer": 2.785,
+     "ms_per_position": 2.785
     },
     {
      "unit": "ALL",
-     "load_s": 0.36,
-     "ms_per_infer": 2.86,
-     "ms_per_position": 2.8603
+     "load_s": 0.363,
+     "ms_per_infer": 2.671,
+     "ms_per_position": 2.6708
     },
     {
      "unit": "CPU",
-     "load_s": 0.213,
-     "ms_per_infer": 2.672,
-     "ms_per_position": 2.6722
+     "load_s": 0.193,
+     "ms_per_infer": 2.654,
+     "ms_per_position": 2.6538
     }
    ]
   },
@@ -234,27 +234,27 @@
    "bench": [
     {
      "unit": "ANE",
-     "load_s": 1.229,
-     "ms_per_infer": 3.437,
-     "ms_per_position": 0.4296
+     "load_s": 1.165,
+     "ms_per_infer": 3.433,
+     "ms_per_position": 0.4291
     },
     {
      "unit": "GPU",
      "load_s": 0.208,
-     "ms_per_infer": 10.9,
-     "ms_per_position": 1.3625
+     "ms_per_infer": 10.337,
+     "ms_per_position": 1.2921
     },
     {
      "unit": "ALL",
-     "load_s": 0.366,
-     "ms_per_infer": 10.81,
-     "ms_per_position": 1.3512
+     "load_s": 0.337,
+     "ms_per_infer": 10.41,
+     "ms_per_position": 1.3012
     },
     {
      "unit": "CPU",
-     "load_s": 0.212,
-     "ms_per_infer": 9.567,
-     "ms_per_position": 1.1959
+     "load_s": 0.189,
+     "ms_per_infer": 9.318,
+     "ms_per_position": 1.1647
     }
    ]
   }

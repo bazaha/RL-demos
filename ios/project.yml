@@ -4,12 +4,33 @@ options:
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
+packages:
+  # The engine (rules + Core ML + MCTS) lives in one place and is unit-tested
+  # on its own. The app used to carry a second, divergent copy of it; that copy
+  # is what silently fell out of step with the exporter.
+  GomokuEngine:
+    path: GomokuEngine
 targets:
   Gomoku15:
     type: application
     platform: iOS
     sources:
       - Gomoku15
+    dependencies:
+      - package: GomokuEngine
+    preBuildScripts:
+      # Fails the build if the bundled .mlpackage is incomplete or if the app
+      # and the exporter disagree about the input feature name -- the two ways
+      # this target has already been broken.
+      - name: Verify bundled Core ML model
+        script: |
+          S="$PROJECT_DIR/../scripts/refresh_ios_model.sh"
+          if [ ! -x "$S" ]; then
+            echo "error: $S is missing — build from inside the RL-demos checkout"
+            exit 1
+          fi
+          "$S" --check
+        basedOnDependencyAnalysis: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.rl-demos.gomoku
@@ -19,7 +40,16 @@ targets:
         INFOPLIST_KEY_CFBundleDisplayName: "五子棋 AZ"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
-        CODE_SIGNING_ALLOWED: "NO"      # simulator CLI builds; enable signing in Xcode for device installs
+        # Signing is ON. It used to be `CODE_SIGNING_ALLOWED: NO`, which made
+        # simulator CLI builds convenient and device installs impossible --
+        # and setting a Team in Xcode does not lift it, so the failure looked
+        # like a mystery. Simulator builds still need no team (they ad-hoc sign
+        # with identity "-"); device builds want a team, which stays out of the
+        # repo so this is not tied to one developer account:
+        #   xcodebuild ... GOMOKU_TEAM_ID=XXXXXXXXXX
+        # or set GOMOKU_TEAM_ID once in Xcode's build settings.
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(GOMOKU_TEAM_ID)
         COREML_CODEGEN_LANGUAGE: None   # we load the compiled model by URL
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
   Gomoku15Tests:
@@ -29,11 +59,15 @@ targets:
       - Gomoku15Tests
     dependencies:
       - target: Gomoku15
+      - package: GomokuEngine
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Gomoku15.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Gomoku15"
         BUNDLE_LOADER: "$(TEST_HOST)"
+        # the test bundle is signed too when running on a device
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: $(GOMOKU_TEAM_ID)
 schemes:
   Gomoku15:
     build:
