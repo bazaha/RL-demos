@@ -133,3 +133,104 @@ final class BookTests: XCTestCase {
         XCTAssertEqual(stones, op.ply_book)
     }
 }
+
+final class AnalysisTests: XCTestCase {
+    // black four, both ends open, black to move: winning moves (7,4)/(7,9)
+    private func wonPosition() -> Position {
+        let pos = Position()
+        for a in [7 * 15 + 5, 0 * 15 + 1, 7 * 15 + 6, 0 * 15 + 3,
+                  7 * 15 + 7, 0 * 15 + 5, 7 * 15 + 8, 0 * 15 + 7] {
+            pos.play(a)
+        }
+        return pos
+    }
+
+    // black four with left end blocked, white to move: (7,9) only saves
+    private func mustBlockPosition() -> Position {
+        let pos = Position()
+        for a in [7 * 15 + 5, 7 * 15 + 4, 7 * 15 + 6, 0 * 15 + 3,
+                  7 * 15 + 7, 0 * 15 + 5, 7 * 15 + 8] {
+            pos.play(a)
+        }
+        return pos
+    }
+
+    func testAnalysisFindsWinningMove() throws {
+        let ev = try Evaluator()
+        let tree = MCTS(wonPosition())
+        _ = try tree.run(sims: 128, evaluator: ev)
+        guard let an = tree.analysis(ply: 8) else { return XCTFail("no analysis") }
+        XCTAssertEqual(an.toPlay, 1)
+        let top = an.candidates[0]
+        XCTAssertTrue([7 * 15 + 4, 7 * 15 + 9].contains(top.move),
+                      "got \(GameViewModel.coordName(top.move))")
+        XCTAssertGreaterThan(top.q, 0.8, "winning move must read as won")
+        XCTAssertGreaterThan(top.winrateMover, 0.9)
+        XCTAssertEqual(top.pv.first, top.move)
+        XCTAssertEqual(top.pv.count, 1, "PV must stop at the terminal node")
+        XCTAssertEqual(an.vBlackBest, top.q, "black to move: vBlack == q")
+    }
+
+    func testAnalysisBlocksFourAndPOVFlips() throws {
+        let ev = try Evaluator()
+        let tree = MCTS(mustBlockPosition())
+        _ = try tree.run(sims: 128, evaluator: ev)
+        guard let an = tree.analysis(ply: 7) else { return XCTFail("no analysis") }
+        XCTAssertEqual(an.toPlay, -1, "white to move")
+        XCTAssertEqual(an.candidates[0].move, 7 * 15 + 9)
+        // white POV q -> black POV flips the sign
+        XCTAssertEqual(an.vBlackBest, -an.candidates[0].q)
+        // PV ghost colors alternate starting with the mover
+        XCTAssertEqual(an.pvColor(0), -1)
+        XCTAssertEqual(an.pvColor(1), 1)
+    }
+
+    func testPVsAreLegalAndBounded() throws {
+        let ev = try Evaluator()
+        let base = mustBlockPosition()
+        let tree = MCTS(base)
+        _ = try tree.run(sims: 128, evaluator: ev)
+        guard let an = tree.analysis(ply: 7) else { return XCTFail("no analysis") }
+        XCTAssertLessThanOrEqual(an.candidates.count, 5)
+        var lastN = Int.max
+        for c in an.candidates {
+            XCTAssertLessThanOrEqual(c.visitsN, lastN, "sorted by visits")
+            lastN = c.visitsN
+            XCTAssertLessThanOrEqual(c.pv.count, 3)
+            let p = base.copy()
+            for a in c.pv {
+                XCTAssertTrue(p.board[a] == 0 && !p.done,
+                              "PV must replay legally")
+                p.play(a)
+            }
+        }
+    }
+
+    @MainActor
+    func testAnalysisModeEndToEnd() async throws {
+        let vm = GameViewModel()
+        for _ in 0..<100 where !vm.engineOK {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        XCTAssertTrue(vm.engineOK)
+        vm.level = .s128
+        vm.toggleAnalysis()
+        for _ in 0..<200 where vm.analysis == nil {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard let an = vm.analysis else { return XCTFail("analysis never arrived") }
+        XCTAssertEqual(an.ply, 0)
+        XCTAssertEqual(an.toPlay, 1)
+        XCTAssertFalse(vm.winrateHistory.isEmpty)
+        // two-tap: first tap on a candidate previews, second tap plays
+        let top = an.candidates[0].move
+        vm.tap(top)
+        XCTAssertEqual(vm.previewMove, top)
+        XCTAssertTrue(vm.moves.isEmpty, "first tap must not play")
+        XCTAssertEqual(vm.previewPV?.first, top)
+        vm.tap(top)
+        XCTAssertEqual(vm.moves.first, top, "second tap plays")
+        XCTAssertNil(vm.previewMove, "preview cleared on apply")
+        vm.newGame()
+    }
+}

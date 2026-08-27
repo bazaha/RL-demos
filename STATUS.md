@@ -62,6 +62,7 @@
 - [x] 2026-08-18 本地推理服务（复用 trainer 的网络与 MCTS,页面探测/回退,MPS 与 CUDA 双部署,跨后端同权重同落子）
 - [x] 2026-08-18 人机对战页全链路（导出→WebGL2 推理→JS MCTS→对拍验证→交互验证）,抓修 GPU GroupNorm 单遍方差、纹理单元 clobber、aiTurn 回合守卫、执白悔棋死局等 9 个 bug
 - [x] 2026-08-26 开局库（分支 `opening-book`,四脚本流水线 `book_selfplay_mass/check/mine/annotate` + 双端 UI）:node09 5 万局 5.2h(黑胜 97.7%,假认输 1/2455)→ 8 重对称归一 K=4 分组挖出 17 条(n 100-2446,黑胜率 80.6-97.7%)→ MPS 标注 v_black → 网页 `#bookBox` 面板 + iOS `BookView`(一键摆盘接着下,BookTests 校验合法重放)。K/MIN_N 由 10.8k 局中途预演定档;命名取前 4 手防重名;详见 CLAUDE.md「开局库」
+- [x] 2026-08-27 iOS 分析模式（分支 `ios-analysis`,KataGo 式）:候选点圆标(行棋方胜率+访问数)+ 两段式点击 PV 虚影(选中候选预览后续 2 步)+ 候选表 + 黑方胜率走势折线。人类回合在隔离树上自动分析,AI 回合复用其搜索;`Analysis.swift` 集中全部视角换算;4 个新 XCTest(胜着置顶+终局 PV 截断/白方翻号/PV 合法性/两段式端到端)一次全绿;详见 CLAUDE.md「iOS App」分析模式条目
 
 ### Backlog（剩余工作：是什么、解决什么问题）
 
