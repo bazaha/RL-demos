@@ -9,7 +9,7 @@ struct CandidateTable: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text("候选着法（\(analysis.toPlay == 1 ? "黑" : "白")方视角胜率）· 点行预览后续 2 步")
+            Text("候选着法（\(analysis.toPlay == 1 ? "黑" : "白")方视角胜率）· 点行切换棋盘上的 2 步预览")
                 .font(.caption2).foregroundStyle(.secondary)
             ForEach(Array(analysis.candidates.enumerated()), id: \.element.id) { i, c in
                 Button { onSelect(c.move) } label: {

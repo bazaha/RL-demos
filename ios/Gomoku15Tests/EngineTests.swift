@@ -222,15 +222,15 @@ final class AnalysisTests: XCTestCase {
         XCTAssertEqual(an.ply, 0)
         XCTAssertEqual(an.toPlay, 1)
         XCTAssertFalse(vm.winrateHistory.isEmpty)
-        // two-tap: first tap on a candidate previews, second tap plays
+        // the best line auto-previews; a board tap PLAYS immediately (no
+        // two-tap interception -- that trap ate moves and stalled the AI)
         let top = an.candidates[0].move
-        vm.tap(top)
-        XCTAssertEqual(vm.previewMove, top)
-        XCTAssertTrue(vm.moves.isEmpty, "first tap must not play")
+        XCTAssertEqual(vm.previewMove, top, "top PV auto-previewed")
         XCTAssertEqual(vm.previewPV?.first, top)
         vm.tap(top)
-        XCTAssertEqual(vm.moves.first, top, "second tap plays")
+        XCTAssertEqual(vm.moves.first, top, "single tap must play")
         XCTAssertNil(vm.previewMove, "preview cleared on apply")
+        XCTAssertTrue(vm.thinking, "AI turn must start after the human move")
         vm.newGame()
     }
 }

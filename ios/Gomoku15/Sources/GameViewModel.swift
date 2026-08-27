@@ -117,13 +117,6 @@ final class GameViewModel: ObservableObject {
     func tap(_ a: Int) {
         guard !thinking, !gameOver, position.toPlay == humanSide,
               a >= 0, a < Rules.cells, position.board[a] == 0 else { return }
-        // Analysis mode: first tap on a marked candidate previews its PV,
-        // a second tap on the same cell plays it (touch stand-in for hover).
-        if analysisOn, previewMove != a,
-           analysis?.candidates.contains(where: { $0.move == a }) == true {
-            previewMove = a
-            return
-        }
         playHuman(a)
     }
 
@@ -206,6 +199,8 @@ final class GameViewModel: ObservableObject {
             guard let r = result, r.ply == self.moves.count,
                   !self.gameOver else { return }
             self.analysis = r
+            // auto-preview the best line's next plies; table rows switch it
+            self.previewMove = r.candidates.first?.move
             if let v = r.vBlackBest { self.winrateHistory[ply] = v }
         }
     }
@@ -326,11 +321,10 @@ final class GameViewModel: ObservableObject {
         }
         while thinking { try? await Task.sleep(nanoseconds: 100_000_000) }
         if analysisOn {
-            // let the post-move analysis land, then preview the top PV
+            // let the post-move analysis (and its auto PV preview) land
             for _ in 0..<100 where analysis == nil {
                 try? await Task.sleep(nanoseconds: 100_000_000)
             }
-            if let top = analysis?.candidates.first?.move { selectCandidate(top) }
         } else if heat != nil {
             showHeat = true
         }
