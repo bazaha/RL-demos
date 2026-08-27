@@ -18,7 +18,7 @@ struct ContentView: View {
         NavigationStack {
             mainBody
                 .toolbar {
-                    if let book {
+                    if book != nil {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showBook = true
@@ -107,7 +107,7 @@ struct ContentView: View {
                         Label("AI 视角", systemImage: "eye")
                     }
                     .buttonStyle(.bordered)
-                    .disabled(vm.heat == nil)
+                    .disabled(!vm.hasHeatToShow)
                 }
 
                 HStack(spacing: 8) {

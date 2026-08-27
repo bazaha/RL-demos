@@ -7,19 +7,20 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		0769019DE096765462E81DE2 /* GameCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F43AC8E861E16FDEA75A37ED /* GameCore.swift */; };
-		3643645B2F55F7DE3C0FB0BF /* MCTS.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2615373FEDB62B11492AB849 /* MCTS.swift */; };
+		1D12F5C30509336D094ED1D6 /* GomokuEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7345D7F9A33F6F886965CCBE /* GomokuEngine */; };
 		39BF5801CE867449E3B4F982 /* testvec.json in Resources */ = {isa = PBXBuildFile; fileRef = 20320E0CCF992D8125145459 /* testvec.json */; };
 		6FB3C342E31C42A54222AD17 /* OpeningBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */; };
 		8B6691D7FDDC7CF33A35A673 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E58FE114EC2BF42847440D /* EngineTests.swift */; };
-		92BFF582A0FAF64C1DB5C9C1 /* Evaluator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 00625B294B5DFAADC1CC1758 /* Evaluator.swift */; };
+		93557FB7B37E8F5DBD3D18D1 /* GomokuAZ_b1.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = D76B60013E03168AADFF21D8 /* GomokuAZ_b1.mlpackage */; };
 		94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E687F176EF14395A24DA21D /* Gomoku15App.swift */; };
 		9A9BBB5132CEAAF0F66A7F91 /* gomoku_book.json in Resources */ = {isa = PBXBuildFile; fileRef = 03BF2240CC7719F31575FFC5 /* gomoku_book.json */; };
 		9F1813E88A0D05C9499874BA /* BookView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6D512C57E473A5296DAD598 /* BookView.swift */; };
+		A1DCAF54404CD7C575250CF4 /* HeatOverlayGameTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18F01F8FFF24CB3B7DBACF53 /* HeatOverlayGameTests.swift */; };
+		B801980448FC7E7C76B980AF /* Rules.swift in Sources */ = {isa = PBXBuildFile; fileRef = 238530E5180E3F4957D1EE1C /* Rules.swift */; };
 		C5E2CDEF9B5DEB2CBEB0450B /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 00E75BF0D232196785397E68 /* Assets.xcassets */; };
-		E9A46224031C0DE27EC957C4 /* Gomoku15.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = 6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */; };
 		EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68AB5E4ACE02965B874DC6C6 /* BoardView.swift */; };
 		FA3D6B2F465FD1DFB5ACDB9B /* GameViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 258E41B322077128FF742FB1 /* GameViewModel.swift */; };
+		FCB2BC69DBDB875EB0076424 /* GomokuEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 656CC208B47F8B038A91CFC2 /* GomokuEngine */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -33,30 +34,58 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		00625B294B5DFAADC1CC1758 /* Evaluator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Evaluator.swift; sourceTree = "<group>"; };
 		00E75BF0D232196785397E68 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		03BF2240CC7719F31575FFC5 /* gomoku_book.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = gomoku_book.json; sourceTree = "<group>"; };
+		18F01F8FFF24CB3B7DBACF53 /* HeatOverlayGameTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeatOverlayGameTests.swift; sourceTree = "<group>"; };
 		20320E0CCF992D8125145459 /* testvec.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = testvec.json; sourceTree = "<group>"; };
+		238530E5180E3F4957D1EE1C /* Rules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Rules.swift; sourceTree = "<group>"; };
 		258E41B322077128FF742FB1 /* GameViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewModel.swift; sourceTree = "<group>"; };
-		2615373FEDB62B11492AB849 /* MCTS.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCTS.swift; sourceTree = "<group>"; };
 		4E04C1439D456DB612092446 /* Gomoku15.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Gomoku15.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */ = {isa = PBXFileReference; path = Gomoku15.mlpackage; sourceTree = "<group>"; };
 		68AB5E4ACE02965B874DC6C6 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
 		991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpeningBook.swift; sourceTree = "<group>"; };
 		9E687F176EF14395A24DA21D /* Gomoku15App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Gomoku15App.swift; sourceTree = "<group>"; };
 		A6D512C57E473A5296DAD598 /* BookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookView.swift; sourceTree = "<group>"; };
+		C0221FE19B050EA70B91B9E1 /* GomokuEngine */ = {isa = PBXFileReference; lastKnownFileType = folder; name = GomokuEngine; path = GomokuEngine; sourceTree = SOURCE_ROOT; };
 		C8E58FE114EC2BF42847440D /* EngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EngineTests.swift; sourceTree = "<group>"; };
 		CF40B70652EBCE1322A9BCB9 /* Gomoku15Tests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = Gomoku15Tests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F43AC8E861E16FDEA75A37ED /* GameCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameCore.swift; sourceTree = "<group>"; };
+		D76B60013E03168AADFF21D8 /* GomokuAZ_b1.mlpackage */ = {isa = PBXFileReference; path = GomokuAZ_b1.mlpackage; sourceTree = "<group>"; };
 /* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		001914D9E141FD543D401706 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1D12F5C30509336D094ED1D6 /* GomokuEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		4E9CCAB2B37CA51E0951E18F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FCB2BC69DBDB875EB0076424 /* GomokuEngine in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
 		1889C28992F507E921CA1CB9 /* Gomoku15Tests */ = {
 			isa = PBXGroup;
 			children = (
 				C8E58FE114EC2BF42847440D /* EngineTests.swift */,
+				18F01F8FFF24CB3B7DBACF53 /* HeatOverlayGameTests.swift */,
 			);
 			path = Gomoku15Tests;
+			sourceTree = "<group>";
+		};
+		27D70615BA3B72BBD5BF3F64 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				C0221FE19B050EA70B91B9E1 /* GomokuEngine */,
+			);
+			name = Packages;
 			sourceTree = "<group>";
 		};
 		3922C65D16FA801B40374F72 /* Gomoku15 */ = {
@@ -83,6 +112,7 @@
 			children = (
 				3922C65D16FA801B40374F72 /* Gomoku15 */,
 				1889C28992F507E921CA1CB9 /* Gomoku15Tests */,
+				27D70615BA3B72BBD5BF3F64 /* Packages */,
 				57C4469192EC52AC5E0F4BE4 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -92,12 +122,10 @@
 			children = (
 				68AB5E4ACE02965B874DC6C6 /* BoardView.swift */,
 				A6D512C57E473A5296DAD598 /* BookView.swift */,
-				00625B294B5DFAADC1CC1758 /* Evaluator.swift */,
-				F43AC8E861E16FDEA75A37ED /* GameCore.swift */,
 				258E41B322077128FF742FB1 /* GameViewModel.swift */,
 				9E687F176EF14395A24DA21D /* Gomoku15App.swift */,
-				2615373FEDB62B11492AB849 /* MCTS.swift */,
 				991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */,
+				238530E5180E3F4957D1EE1C /* Rules.swift */,
 			);
 			path = Sources;
 			sourceTree = "<group>";
@@ -115,7 +143,7 @@
 		DEFF82191D7E222E95E6D791 /* Models */ = {
 			isa = PBXGroup;
 			children = (
-				6502D46FD94F6FDAE780D0DE /* Gomoku15.mlpackage */,
+				D76B60013E03168AADFF21D8 /* GomokuAZ_b1.mlpackage */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -128,6 +156,7 @@
 			buildConfigurationList = 91359AEE972B141324D6BD18 /* Build configuration list for PBXNativeTarget "Gomoku15Tests" */;
 			buildPhases = (
 				57A5B885856A4ACC53F00B33 /* Sources */,
+				001914D9E141FD543D401706 /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -136,6 +165,7 @@
 			);
 			name = Gomoku15Tests;
 			packageProductDependencies = (
+				7345D7F9A33F6F886965CCBE /* GomokuEngine */,
 			);
 			productName = Gomoku15Tests;
 			productReference = CF40B70652EBCE1322A9BCB9 /* Gomoku15Tests.xctest */;
@@ -145,8 +175,10 @@
 			isa = PBXNativeTarget;
 			buildConfigurationList = EC6CB569F4268C7079225041 /* Build configuration list for PBXNativeTarget "Gomoku15" */;
 			buildPhases = (
+				7D36B39E53D9A93E60755126 /* Verify bundled Core ML model */,
 				C425AB7BA9F4766A0B3FE3F6 /* Sources */,
 				1A721BF6B87E5D4371E284A0 /* Resources */,
+				4E9CCAB2B37CA51E0951E18F /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -154,6 +186,7 @@
 			);
 			name = Gomoku15;
 			packageProductDependencies = (
+				656CC208B47F8B038A91CFC2 /* GomokuEngine */,
 			);
 			productName = Gomoku15;
 			productReference = 4E04C1439D456DB612092446 /* Gomoku15.app */;
@@ -168,6 +201,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					99E12529D2357FCBC4147B96 = {
+						DevelopmentTeam = "$(GOMOKU_TEAM_ID)";
+						ProvisioningStyle = Automatic;
+					};
+					D47D683ECE22E42509516A41 = {
+						DevelopmentTeam = "$(GOMOKU_TEAM_ID)";
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = 426A5E244C08872728D1BC9A /* Build configuration list for PBXProject "Gomoku15" */;
@@ -179,6 +220,9 @@
 			);
 			mainGroup = 6A7C46D7415F323BBABF184D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F9811B0E3EAF11EEDA8886D7 /* XCLocalSwiftPackageReference "GomokuEngine" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 57C4469192EC52AC5E0F4BE4 /* Products */;
 			projectDirPath = "";
@@ -203,12 +247,35 @@
 		};
 /* End PBXResourcesBuildPhase section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		7D36B39E53D9A93E60755126 /* Verify bundled Core ML model */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Verify bundled Core ML model";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "S=\"$PROJECT_DIR/../scripts/refresh_ios_model.sh\"\nif [ ! -x \"$S\" ]; then\n  echo \"error: $S is missing — build from inside the RL-demos checkout\"\n  exit 1\nfi\n\"$S\" --check\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		57A5B885856A4ACC53F00B33 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				8B6691D7FDDC7CF33A35A673 /* EngineTests.swift in Sources */,
+				A1DCAF54404CD7C575250CF4 /* HeatOverlayGameTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -218,13 +285,11 @@
 			files = (
 				EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */,
 				9F1813E88A0D05C9499874BA /* BookView.swift in Sources */,
-				92BFF582A0FAF64C1DB5C9C1 /* Evaluator.swift in Sources */,
-				0769019DE096765462E81DE2 /* GameCore.swift in Sources */,
 				FA3D6B2F465FD1DFB5ACDB9B /* GameViewModel.swift in Sources */,
-				E9A46224031C0DE27EC957C4 /* Gomoku15.mlpackage in Sources */,
 				94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */,
-				3643645B2F55F7DE3C0FB0BF /* MCTS.swift in Sources */,
+				93557FB7B37E8F5DBD3D18D1 /* GomokuAZ_b1.mlpackage in Sources */,
 				6FB3C342E31C42A54222AD17 /* OpeningBook.swift in Sources */,
+				B801980448FC7E7C76B980AF /* Rules.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -243,9 +308,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COREML_CODEGEN_LANGUAGE = None;
+				DEVELOPMENT_TEAM = "$(GOMOKU_TEAM_ID)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "五子棋 AZ";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -265,6 +331,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(GOMOKU_TEAM_ID)";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -401,6 +469,8 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "$(GOMOKU_TEAM_ID)";
 				GENERATE_INFOPLIST_FILE = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -418,9 +488,10 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
 				COREML_CODEGEN_LANGUAGE = None;
+				DEVELOPMENT_TEAM = "$(GOMOKU_TEAM_ID)";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "五子棋 AZ";
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -467,6 +538,24 @@
 			defaultConfigurationName = Debug;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F9811B0E3EAF11EEDA8886D7 /* XCLocalSwiftPackageReference "GomokuEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = GomokuEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		656CC208B47F8B038A91CFC2 /* GomokuEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GomokuEngine;
+		};
+		7345D7F9A33F6F886965CCBE /* GomokuEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = GomokuEngine;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = DBCA98EFE101E62F7C5E0A5D /* Project object */;
 }

@@ -46,16 +46,12 @@ struct BoardCanvas: View {
         }
 
         if showHeat, let heat {
-            let mx = heat.max() ?? 0
-            if mx > 0 {
-                for i in 0..<Rules.cells where heat[i] >= max(2, mx * 0.08) && board[i] == 0 {
-                    let p = xy(i)
-                    let alpha = 0.08 + 0.55 * Double(heat[i] / mx)
-                    ctx.fill(Path(roundedRect: CGRect(x: p.x - cell * 0.38, y: p.y - cell * 0.38,
-                                                      width: cell * 0.76, height: cell * 0.76),
-                                  cornerRadius: 4),
-                             with: .color(.blue.opacity(alpha)))
-                }
+            for h in heatCells(heat: heat, board: board) {
+                let p = xy(h.index)
+                ctx.fill(Path(roundedRect: CGRect(x: p.x - cell * 0.38, y: p.y - cell * 0.38,
+                                                  width: cell * 0.76, height: cell * 0.76),
+                              cornerRadius: 4),
+                         with: .color(.blue.opacity(0.08 + 0.55 * h.weight)))
             }
         }
 
@@ -88,6 +84,35 @@ struct BoardCanvas: View {
                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
         }
     }
+}
+
+/// Cells the "AI 视角" overlay paints, strongest first, with a 0...1 weight.
+///
+/// Two things this has to get right, both found by replaying a real 25-ply game
+/// on device:
+///
+///   1. **Normalise against the best _empty_ cell, not the global maximum.**
+///      The move the AI actually played always holds the most visits, and by
+///      the time this draws it is occupied and therefore excluded. Scaling the
+///      alternatives against a number they can never reach made the overlay
+///      fade out exactly when the search was most decisive -- it drew nothing
+///      at all on 5 of those 25 plies (e.g. max 568 visits on the played cell,
+///      best alternative 1). The played move is not lost: it already carries
+///      the orange last-move ring.
+///   2. **Cap the count.** With the fix alone, a flat position lit up 198
+///      cells -- a wall of blue that says as little as an empty board.
+func heatCells(heat: [Float], board: [Int8],
+               limit: Int = 12) -> [(index: Int, weight: Double)] {
+    guard heat.count >= board.count else { return [] }
+    var best: Float = 0
+    for i in 0..<board.count where board[i] == 0 { best = max(best, heat[i]) }
+    guard best > 0 else { return [] }          // the search looked at nothing else
+    let floor = max(1, best * 0.08)
+    return (0..<board.count)
+        .filter { board[$0] == 0 && heat[$0] >= floor }
+        .sorted { heat[$0] > heat[$1] }
+        .prefix(limit)
+        .map { (index: $0, weight: min(1, Double(heat[$0] / best))) }
 }
 
 /// Interactive board for the game screen: BoardCanvas + the tap gesture.

@@ -22,6 +22,17 @@ public struct SelfTestResult: Sendable {
 ///
 /// It checks the *whole* path -- position replay, plane encoding, Core ML
 /// inference, legal masking, softmax -- not just the model.
+public enum SelfTestError: LocalizedError {
+    case boardMismatch(vectors: Int, model: Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .boardMismatch(let v, let m):
+            return "testvec board \(v) != model board \(m)"
+        }
+    }
+}
+
 public enum EngineSelfTest {
     /// Same thresholds the play page applies to its WebGL2 engine.
     public static let policyTolerance: Float = 5e-3
@@ -42,8 +53,12 @@ public enum EngineSelfTest {
 
     public static func run(net: AZNet, testVectorURL url: URL) throws -> [SelfTestResult] {
         let file = try JSONDecoder().decode(File.self, from: Data(contentsOf: url))
-        precondition(file.board == net.config.board,
-                     "testvec board \(file.board) != model board \(net.config.board)")
+        // a throw, not a precondition: the vectors and the model are staged by
+        // different steps and can drift, and a release build must surface that
+        // in the UI rather than trap on launch
+        guard file.board == net.config.board else {
+            throw SelfTestError.boardMismatch(vectors: file.board, model: net.config.board)
+        }
         return try file.vectors.map { vec in
             var state = GomokuState(config: net.config)
             for m in vec.moves { state.play(m) }
