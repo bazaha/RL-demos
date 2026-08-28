@@ -1,13 +1,29 @@
-# datasets are fetched at run time (hf-mirror), never in git
-data/
+# datasets are fetched at run time (hf-mirror), never in git.
+# Keep the leading slash: a bare `data/` also matches the `Data/` directory
+# inside an .mlpackage (macOS git is case-insensitive), which is how the iOS
+# app shipped for months with a model that was nothing but a Manifest.json.
+/data/
 
 # checkpoints stay on node09, EXCEPT iter040.pt: the final model, needed
 # locally by serve_gomoku.py and to re-export the play page's weights
 results/gomoku_ckpt_*/**
 !results/gomoku_ckpt_p15/iter040.pt
 
+# Core ML export: the .mlpackage is 21 MB and regenerable from iter040.pt in
+# about a minute, so only the acceptance record goes in git.
+# NOTE the asymmetry is deliberate: the copy staged into the app
+# (ios/Gomoku15/Models/GomokuAZ_b1.mlpackage) IS tracked, because the app
+# target cannot build without it and requiring every clone to have torch +
+# coremltools first is worse than 20 MB in the repo.
+results/coreml_export/**
+!results/coreml_export/coreml_report.json
+
+# SwiftPM build products
+ios/**/.build/
+
 # scratch
 __pycache__/
 *.pid
 .DS_Store
 .venv-serve/
+.venv/

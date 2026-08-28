@@ -1,0 +1,263 @@
+{
+ "ckpt": "iter040.pt",
+ "board": 15,
+ "channels": 192,
+ "blocks": 12,
+ "n_in_row": 5,
+ "params": 10533634,
+ "coremltools": "9.0",
+ "torch": "2.13.0",
+ "tol_policy": 0.005,
+ "tol_value": 0.02,
+ "models": [
+  {
+   "batch": 1,
+   "path": "GomokuAZ_b1.mlpackage",
+   "bytes": 21202262,
+   "testvec": [
+    {
+     "name": "empty",
+     "argmax": 127,
+     "ref_argmax": 127,
+     "argmax_ok": true,
+     "max_delta_policy": 0.000127,
+     "delta_value": 0.000764,
+     "pass": true
+    },
+    {
+     "name": "one_stone",
+     "argmax": 111,
+     "ref_argmax": 111,
+     "argmax_ok": true,
+     "max_delta_policy": 0.000181,
+     "delta_value": 0.000425,
+     "pass": true
+    },
+    {
+     "name": "open_three",
+     "argmax": 110,
+     "ref_argmax": 110,
+     "argmax_ok": true,
+     "max_delta_policy": 0.001806,
+     "delta_value": 0.000165,
+     "pass": true
+    },
+    {
+     "name": "must_block",
+     "argmax": 114,
+     "ref_argmax": 114,
+     "argmax_ok": true,
+     "max_delta_policy": 4.2e-05,
+     "delta_value": 1e-06,
+     "pass": true
+    },
+    {
+     "name": "midgame",
+     "argmax": 70,
+     "ref_argmax": 70,
+     "argmax_ok": true,
+     "max_delta_policy": 4.7e-05,
+     "delta_value": 0.0,
+     "pass": true
+    }
+   ],
+   "testvec_pass": true,
+   "compute_plan": {
+    "const_or_unreported": 447,
+    "ANE": 344
+   },
+   "compute_plan_per_op": {
+    "ios17.conv": {
+     "ANE": 27
+    },
+    "ios17.reshape": {
+     "ANE": 56
+    },
+    "ios16.reduce_mean": {
+     "ANE": 54
+    },
+    "ios17.sub": {
+     "ANE": 27
+    },
+    "ios17.square": {
+     "ANE": 27
+    },
+    "ios17.add": {
+     "ANE": 39
+    },
+    "ios17.sqrt": {
+     "ANE": 27
+    },
+    "ios17.real_div": {
+     "ANE": 27
+    },
+    "ios17.batch_norm": {
+     "ANE": 27
+    },
+    "ios16.relu": {
+     "ANE": 28
+    },
+    "ios17.linear": {
+     "ANE": 3
+    },
+    "ios17.tanh": {
+     "ANE": 1
+    },
+    "ios17.squeeze": {
+     "ANE": 1
+    }
+   },
+   "bench": [
+    {
+     "unit": "ANE",
+     "load_s": 0.855,
+     "ms_per_infer": 0.664,
+     "ms_per_position": 0.6641
+    },
+    {
+     "unit": "GPU",
+     "load_s": 0.207,
+     "ms_per_infer": 2.785,
+     "ms_per_position": 2.785
+    },
+    {
+     "unit": "ALL",
+     "load_s": 0.363,
+     "ms_per_infer": 2.671,
+     "ms_per_position": 2.6708
+    },
+    {
+     "unit": "CPU",
+     "load_s": 0.193,
+     "ms_per_infer": 2.654,
+     "ms_per_position": 2.6538
+    }
+   ]
+  },
+  {
+   "batch": 8,
+   "path": "GomokuAZ_b8.mlpackage",
+   "bytes": 21202262,
+   "testvec": [
+    {
+     "name": "empty",
+     "argmax": 127,
+     "ref_argmax": 127,
+     "argmax_ok": true,
+     "max_delta_policy": 0.000127,
+     "delta_value": 0.000764,
+     "pass": true
+    },
+    {
+     "name": "one_stone",
+     "argmax": 111,
+     "ref_argmax": 111,
+     "argmax_ok": true,
+     "max_delta_policy": 0.000181,
+     "delta_value": 0.000425,
+     "pass": true
+    },
+    {
+     "name": "open_three",
+     "argmax": 110,
+     "ref_argmax": 110,
+     "argmax_ok": true,
+     "max_delta_policy": 0.001806,
+     "delta_value": 0.000165,
+     "pass": true
+    },
+    {
+     "name": "must_block",
+     "argmax": 114,
+     "ref_argmax": 114,
+     "argmax_ok": true,
+     "max_delta_policy": 4.2e-05,
+     "delta_value": 1e-06,
+     "pass": true
+    },
+    {
+     "name": "midgame",
+     "argmax": 70,
+     "ref_argmax": 70,
+     "argmax_ok": true,
+     "max_delta_policy": 4.7e-05,
+     "delta_value": 0.0,
+     "pass": true
+    }
+   ],
+   "testvec_pass": true,
+   "compute_plan": {
+    "const_or_unreported": 447,
+    "ANE": 344
+   },
+   "compute_plan_per_op": {
+    "ios17.conv": {
+     "ANE": 27
+    },
+    "ios17.reshape": {
+     "ANE": 56
+    },
+    "ios16.reduce_mean": {
+     "ANE": 54
+    },
+    "ios17.sub": {
+     "ANE": 27
+    },
+    "ios17.square": {
+     "ANE": 27
+    },
+    "ios17.add": {
+     "ANE": 39
+    },
+    "ios17.sqrt": {
+     "ANE": 27
+    },
+    "ios17.real_div": {
+     "ANE": 27
+    },
+    "ios17.batch_norm": {
+     "ANE": 27
+    },
+    "ios16.relu": {
+     "ANE": 28
+    },
+    "ios17.linear": {
+     "ANE": 3
+    },
+    "ios17.tanh": {
+     "ANE": 1
+    },
+    "ios17.squeeze": {
+     "ANE": 1
+    }
+   },
+   "bench": [
+    {
+     "unit": "ANE",
+     "load_s": 1.165,
+     "ms_per_infer": 3.433,
+     "ms_per_position": 0.4291
+    },
+    {
+     "unit": "GPU",
+     "load_s": 0.208,
+     "ms_per_infer": 10.337,
+     "ms_per_position": 1.2921
+    },
+    {
+     "unit": "ALL",
+     "load_s": 0.337,
+     "ms_per_infer": 10.41,
+     "ms_per_position": 1.3012
+    },
+    {
+     "unit": "CPU",
+     "load_s": 0.189,
+     "ms_per_infer": 9.318,
+     "ms_per_position": 1.1647
+    }
+   ]
+  }
+ ],
+ "pass": true
+}

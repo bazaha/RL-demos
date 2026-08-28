@@ -1,5 +1,28 @@
 import Foundation
+import GomokuEngine
 import SwiftUI
+
+/// Name of the Core ML model in the bundle. Matches what
+/// `scripts/export_gomoku_coreml.py` writes, so the exporter's output can be
+/// copied in verbatim -- see `scripts/refresh_ios_model.sh`.
+private let modelResourceName = "GomokuAZ_b1"
+
+enum EngineError: LocalizedError {
+    case modelMissing(String)
+    case testVectorsMissing
+    case geometryMismatch(model: Int, ui: Int)
+
+    var errorDescription: String? {
+        switch self {
+        case .modelMissing(let name):
+            return "\(name).mlmodelc 不在 App 包里（跑 scripts/refresh_ios_model.sh 重新导出并放入）"
+        case .testVectorsMissing:
+            return "testvec.json 不在 App 包里"
+        case .geometryMismatch(let model, let ui):
+            return "模型棋盘 \(model)×\(model) 与界面的 \(ui)×\(ui) 不一致"
+        }
+    }
+}
 
 @MainActor
 final class GameViewModel: ObservableObject {
@@ -35,18 +58,11 @@ final class GameViewModel: ObservableObject {
 
     // KataGo-style analysis mode
     @Published var analysisOn = false
-    @Published var analysis: Analysis? = nil
+    @Published var analysis: PositionAnalysis? = nil
     @Published var analyzing = false
-    @Published var previewMove: Int? = nil          // selected candidate (1st tap)
+    @Published var previewMove: Int? = nil          // candidate whose PV shows
     @Published var winrateHistory: [Int: Float] = [:]  // ply -> vBlack in [-1, 1]
-
-    private var position = Position()
-    private var tree: MCTS!
-    private var evaluator: Evaluator?
-    private var aiTask: Task<Void, Never>? = nil
-    private var analysisTask: Task<Void, Never>? = nil
-    private final class CancelFlag: @unchecked Sendable { var on = false }
-    private var analysisFlag: CancelFlag? = nil
+    private var analysisTask: Task<Void, Never>?
 
     /// PV of the selected candidate, for the board's ghost-stone preview.
     var previewPV: [Int]? {
@@ -56,18 +72,102 @@ final class GameViewModel: ObservableObject {
 
     private var analysisSims: Int { level == .raw ? 400 : level.rawValue }
 
+    /// Geometry actually in force. Replaced in `boot()` with the config the
+    /// exporter stamped into the model, so the UI position and the engine's
+    /// tree are built from one source rather than two that happen to agree.
+    private var config = Rules.config
+    /// UI-side authoritative position. The engine keeps its own copy inside the
+    /// search tree; `runEngine` is the only thing that reconciles the two.
+    private var state = GomokuState(config: Rules.config)
+    private var player: AZPlayer?
+    /// Exactly one engine task exists at a time. A new one cancels the previous
+    /// and waits for it to unwind before touching the actor.
+    private var engineTask: Task<Void, Never>?
+    /// Bumped by every `runEngine`. A task only writes published state while it
+    /// is still the current one, so a cancelled search cannot clear `thinking`
+    /// out from under its successor or stamp stale text over a fresh status.
+    private var engineGeneration = 0
+
+    var engineReady: Bool { player != nil }
+
+    /// Whether "AI 视角" has anything to paint. The button used to be enabled
+    /// whenever `heat != nil`, which included every position where the search
+    /// put all of its visits on the move it then played -- toggling it did
+    /// nothing and looked broken.
+    var hasHeatToShow: Bool {
+        guard let heat else { return false }
+        return !heatCells(heat: heat, board: board).isEmpty
+    }
+
+    /// Held so tests can await startup; `init` cannot be async.
+    private var bootTask: Task<Void, Never>?
+
     init() {
-        Task { await boot() }
+        bootTask = Task { await boot() }
+    }
+
+    /// Test hook: resolves once the engine has loaded (or failed to).
+    func waitUntilReady() async { await bootTask?.value }
+
+    /// Test hook: waits for any in-flight engine work, then reports the board
+    /// the search tree actually holds. It must always equal `board`; the whole
+    /// risk of moving the engine into an actor is that these two drift.
+    func engineBoard() async -> [Int8]? {
+        await engineTask?.value
+        guard let player else { return nil }
+        return await player.state.cells
+    }
+
+    // MARK: - boot
+
+    /// Loads the model and runs the shared reference vectors through the whole
+    /// path (replay, encode, Core ML, mask, softmax) before play is allowed.
+    ///
+    /// `nonisolated` and `async`, so the ~0.9 s model load and the five warm-up
+    /// forwards happen off the main actor -- doing this inline would block the
+    /// first frame.
+    private nonisolated static func bootEngine() async throws
+        -> (player: AZPlayer, config: GomokuConfig, checks: [SelfTestResult]) {
+        guard let modelURL = Bundle.main.url(forResource: modelResourceName,
+                                             withExtension: "mlmodelc") else {
+            throw EngineError.modelMissing(modelResourceName)
+        }
+        // .cpuAndNeuralEngine, not .all: with .all the Core ML planner picks the
+        // GPU for this GroupNorm graph (macOS measurement in
+        // results/coreml_export/coreml_report.json: 2.94 ms vs 0.66 ms).
+        let net = try await AZNet.load(url: modelURL)
+        guard net.config.board == Rules.board else {
+            throw EngineError.geometryMismatch(model: net.config.board, ui: Rules.board)
+        }
+        guard let vecURL = Bundle.main.url(forResource: "testvec",
+                                           withExtension: "json") else {
+            throw EngineError.testVectorsMissing
+        }
+        let checks = try EngineSelfTest.run(net: net, testVectorURL: vecURL)
+        return (AZPlayer(net: net), net.config, checks)
     }
 
     private func boot() async {
         do {
-            let ev = try Evaluator()
-            let test = await Task.detached(priority: .userInitiated) { ev.selfTest() }.value
-            evaluator = ev
-            engineOK = test.ok
-            engineBadge = test.ok ? "引擎校验 ✓ 与训练端一致（\(test.detail)）"
-                                  : "引擎校验失败：\(test.detail)"
+            let (player, config, checks) = try await Self.bootEngine()
+            self.player = player
+            self.config = config
+            self.state = GomokuState(config: config)
+            // an empty vector list is a failure, not a pass: the old self-test
+            // skipped unparseable vectors and then reported maxD 0.0
+            let worst = checks.map(\.maxDeltaPolicy).max() ?? 0
+            let worstValue = checks.map(\.deltaValue).max() ?? 0
+            engineOK = !checks.isEmpty && checks.allSatisfy(\.passed)
+            if engineOK {
+                engineBadge = String(format: "引擎校验 ✓ 与训练端一致（%d 个参考局面，policy maxΔ %.1e，value maxΔ %.1e）",
+                                     checks.count, worst, worstValue)
+            } else if checks.isEmpty {
+                engineBadge = "引擎校验失败：参考局面为空"
+            } else {
+                let bad = checks.filter { !$0.passed }.map(\.name).joined(separator: ", ")
+                engineBadge = String(format: "引擎校验失败：%@（policy maxΔ %.1e，value maxΔ %.1e）",
+                                     bad, worst, worstValue)
+            }
             newGame()
             if ProcessInfo.processInfo.arguments.contains("-analysis") {
                 analysisOn = true
@@ -81,31 +181,10 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    // MARK: - game flow
+
     func newGame() {
-        aiTask?.cancel()
-        cancelAnalysis()
-        position = Position()
-        tree = MCTS(position)
-        board = position.board
-        moves = []
-        winCells = nil
-        heat = nil
-        showHeat = false
-        valueBlack = nil
-        lastMoveMs = nil
-        gameOver = false
-        thinking = false
-        statusIsGood = nil
-        analysis = nil
-        previewMove = nil
-        winrateHistory = [:]
-        if position.toPlay != humanSide {
-            status = "AI 开局中…"
-            scheduleAITurn()
-        } else {
-            status = "轮到你落子。"
-            scheduleAnalysis()
-        }
+        reset(to: [], playingStatus: "AI 开局中…", waitingStatus: "轮到你落子。")
     }
 
     func setSide(_ s: Int8) {
@@ -115,22 +194,19 @@ final class GameViewModel: ObservableObject {
     }
 
     func tap(_ a: Int) {
-        guard !thinking, !gameOver, position.toPlay == humanSide,
-              a >= 0, a < Rules.cells, position.board[a] == 0 else { return }
-        playHuman(a)
-    }
-
-    private func playHuman(_ a: Int) {
+        guard engineReady, !thinking, !gameOver,
+              state.toPlay == humanSide, state.isLegal(a) else { return }
         heat = nil
         showHeat = false
         apply(a)
-        if !gameOver { scheduleAITurn() }
+        // .advance keeps the subtree the last search already built
+        runEngine(sync: .advance(a))
     }
 
     func undo() {
         guard !thinking, !moves.isEmpty else { return }
         var k = moves.count
-        if position.toPlay == humanSide || gameOver { k -= 1 }
+        if state.toPlay == humanSide || gameOver { k -= 1 }
         k -= 1
         reset(to: Array(moves.prefix(max(0, k))), statusPrefix: "已悔棋")
     }
@@ -142,7 +218,169 @@ final class GameViewModel: ObservableObject {
         reset(to: Array(line.prefix(k)), statusPrefix: "已摆上开局前 \(k) 手")
     }
 
-    // MARK: - Analysis mode (KataGo-style)
+    private func reset(to keep: [Int], statusPrefix: String) {
+        reset(to: keep,
+              playingStatus: "\(statusPrefix)。",
+              waitingStatus: "\(statusPrefix)，轮到你。")
+    }
+
+    /// Rebuilds the game at a move prefix (new game, undo, opening book) and
+    /// hands the turn to whoever is due -- including triggering the AI.
+    private func reset(to keep: [Int], playingStatus: String, waitingStatus: String) {
+        cancelAnalysis()
+        state = GomokuState(config: config)
+        for a in keep { state.play(a) }
+        moves = keep
+        board = state.cells
+        winCells = nil
+        heat = nil
+        showHeat = false
+        valueBlack = nil
+        lastMoveMs = nil
+        gameOver = state.isOver
+        statusIsGood = nil
+        analysis = nil
+        previewMove = nil
+        winrateHistory = winrateHistory.filter { $0.key < keep.count }
+        guard engineReady else {
+            status = "引擎不可用"
+            return
+        }
+        status = (!gameOver && state.toPlay != humanSide) ? playingStatus : waitingStatus
+        // the tree cannot walk backwards, so a prefix change means replay
+        runEngine(sync: .rewind(keep))
+        if !gameOver, state.toPlay == humanSide { scheduleAnalysis() }
+    }
+
+    private func apply(_ a: Int) {
+        cancelAnalysis()
+        analysis = nil
+        previewMove = nil
+        let mover = state.toPlay
+        let r = a / config.board, c = a % config.board
+        state.play(a)
+        moves.append(a)
+        board = state.cells
+        if state.isOver {
+            gameOver = true
+            if analysisOn {
+                winrateHistory[moves.count] =
+                    state.winner == 0 ? 0 : (state.winner == 1 ? 1 : -1)
+            }
+            if state.winner != 0 {
+                winCells = state.winningLine(through: r, c, player: mover)
+                let youWin = state.winner == humanSide
+                status = youWin ? "你赢了！" : "AI 获胜。"
+                statusIsGood = youWin
+            } else {
+                status = "平局（棋盘下满）。"
+            }
+            UINotificationFeedbackGenerator().notificationOccurred(
+                state.winner == humanSide ? .success : .warning)
+        } else {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        }
+    }
+
+    // MARK: - engine
+
+    private enum EngineSync {
+        /// One move onto the existing tree; the matching subtree is kept.
+        case advance(Int)
+        /// Rebuild from a move list (new game, undo, opening book).
+        case rewind([Int])
+    }
+
+    /// Reconciles the engine with `state` and, if it is the AI's turn, searches
+    /// and plays.
+    ///
+    /// Cancellation works here and did not in the previous `Task.detached`
+    /// version: a detached task is a cancellation root, so the `Task.isCancelled`
+    /// the search polled was never the one `cancel()` had been called on. This
+    /// `Task` is the one we hold, and `AZPlayer.think` polls it every 32
+    /// simulations, so a 1600-simulation search now stops within ~20 ms.
+    private func runEngine(sync: EngineSync) {
+        guard let player else { return }
+        let previous = engineTask
+        previous?.cancel()
+
+        let sims = level.rawValue
+        let willThink = !gameOver && state.toPlay != humanSide
+        thinking = willThink
+        progressText = ""
+        engineGeneration &+= 1
+        let generation = engineGeneration
+
+        engineTask = Task { [weak self] in
+            _ = await previous?.value          // let the cancelled search unwind
+            // The sync runs even when this task is already cancelled. Skipping
+            // it would leave the actor's tree on a position the board no longer
+            // shows, and `.rewind` is the only thing that ever repairs that --
+            // a dropped one is never made up. It is cheap and idempotent, so
+            // there is nothing to gain by bailing out first.
+            switch sync {
+            case .advance(let a): await player.play(a)
+            case .rewind(let line): await player.rewind(to: line)
+            }
+            guard let self, willThink, !Task.isCancelled else { return }
+            await self.search(with: player, sims: sims, generation: generation)
+        }
+    }
+
+    private func search(with player: AZPlayer, sims: Int, generation: Int) async {
+        let t0 = Date()
+        /// True while this task is still the one the view model is driving.
+        func current() -> Bool { generation == engineGeneration }
+
+        status = sims > 0 ? "AI 思考中（\(sims) 次模拟）…" : "AI 思考中…"
+
+        let result: SearchResult?
+        do {
+            result = try await player.think(
+                simulations: sims,
+                progress: { [weak self] done, total in
+                    Task { @MainActor in
+                        guard let self, generation == self.engineGeneration else { return }
+                        self.progressText = "\(done)/\(total)"
+                    }
+                })
+        } catch {
+            result = nil
+        }
+
+        guard current() else { return }
+        thinking = false
+        progressText = ""
+        guard let r = result, r.action >= 0 else {
+            status = "引擎异常，请开新对局。"
+            return
+        }
+
+        // Advance the tree before the move reaches the screen. Once `apply`
+        // runs the board shows a stone the engine would not have; the ordering
+        // here is what keeps the two from ever disagreeing, rather than relying
+        // on the caller-side task chain to paper over the window.
+        await player.play(r.action)
+        guard current() else { return }
+
+        lastMoveMs = Int(Date().timeIntervalSince(t0) * 1000)
+        heat = r.visits.isEmpty ? nil : r.visits
+        // `value` is the mover's view, and the mover is the AI until `apply`
+        let aiIsBlack = state.toPlay == 1
+        valueBlack = aiIsBlack ? r.value : -r.value
+        if analysisOn, let v = valueBlack {
+            // the AI's own search doubles as this ply's analysis
+            winrateHistory[moves.count] = v
+        }
+        apply(r.action)
+        if !gameOver {
+            let secs = String(format: "%.1f", Double(lastMoveMs ?? 0) / 1000)
+            status = "AI 落子 \(Self.coordName(r.action))（\(secs)s）。轮到你。"
+            scheduleAnalysis()
+        }
+    }
+
+    // MARK: - analysis mode (KataGo-style)
 
     func toggleAnalysis() {
         analysisOn.toggle()
@@ -156,7 +394,7 @@ final class GameViewModel: ObservableObject {
         }
     }
 
-    /// Table-row tap: toggle the PV preview for a marked candidate.
+    /// Table-row tap: switch the board's PV preview to this candidate.
     func selectCandidate(_ a: Int) {
         guard analysis?.candidates.contains(where: { $0.move == a }) == true
         else { return }
@@ -164,160 +402,45 @@ final class GameViewModel: ObservableObject {
     }
 
     private func cancelAnalysis() {
-        analysisFlag?.on = true
-        analysisFlag = nil
         analysisTask?.cancel()
         analysisTask = nil
         analyzing = false
     }
 
-    /// Analyze the current position (human to move) on an isolated tree.
-    /// The game tree is never touched, so there is nothing to race with.
+    /// Analyzes the current position (human to move) on the game tree.
+    /// `AZPlayer` serialises access and aborts on tree swaps; the ply check
+    /// on arrival drops anything stale. Runs only after the pending engine
+    /// task has synced the actor's tree to this position.
     private func scheduleAnalysis() {
-        guard analysisOn, !gameOver, !thinking,
-              position.toPlay == humanSide, let ev = evaluator else { return }
+        guard analysisOn, engineReady, !gameOver, !thinking,
+              state.toPlay == humanSide, let player else { return }
         cancelAnalysis()
-        let ply = moves.count
         let sims = analysisSims
-        let t = MCTS(position)       // init copies the position
-        let flag = CancelFlag()
-        analysisFlag = flag
+        let pending = engineTask
         analyzing = true
         analysisTask = Task { [weak self] in
-            let result: Analysis?
-            do {
-                _ = try await Task.detached(priority: .utility) { () -> MCTS.Result in
-                    try t.run(sims: sims, evaluator: ev,
-                              isCancelled: { flag.on })
-                }.value
-                result = flag.on ? nil : t.analysis(ply: ply)
-            } catch {
-                result = nil
-            }
+            _ = await pending?.value       // tree now matches the board
+            guard !Task.isCancelled else { return }
+            let result = (try? await player.analyze(simulations: sims)) ?? nil
             guard let self, !Task.isCancelled else { return }
             self.analyzing = false
-            guard let r = result, r.ply == self.moves.count,
-                  !self.gameOver else { return }
+            guard let r = result, r.ply == self.moves.count, !self.gameOver,
+                  self.analysisOn else { return }
             self.analysis = r
-            // auto-preview the best line's next plies; table rows switch it
+            // auto-preview the best line; table rows switch branches
             self.previewMove = r.candidates.first?.move
-            if let v = r.vBlackBest { self.winrateHistory[ply] = v }
+            if let v = r.vBlackBest { self.winrateHistory[r.ply] = v }
         }
     }
 
-    /// Rebuild the game at a move prefix (shared by undo and the book) and
-    /// hand the turn to whoever is due -- including triggering the AI.
-    private func reset(to keep: [Int], statusPrefix: String) {
-        aiTask?.cancel()
-        cancelAnalysis()
-        position = Position()
-        for a in keep { position.play(a) }
-        tree = MCTS(position)
-        moves = keep
-        board = position.board
-        winCells = nil
-        heat = nil
-        showHeat = false
-        valueBlack = nil
-        gameOver = position.done
-        thinking = false
-        statusIsGood = nil
-        analysis = nil
-        previewMove = nil
-        winrateHistory = winrateHistory.filter { $0.key <= keep.count }
-        if !gameOver, position.toPlay != humanSide {
-            status = "\(statusPrefix)。"
-            scheduleAITurn()
-        } else {
-            status = "\(statusPrefix)，轮到你。"
-            scheduleAnalysis()
-        }
-    }
-
-    private func apply(_ a: Int) {
-        cancelAnalysis()
-        analysis = nil
-        previewMove = nil
-        position.play(a)
-        tree.advance(a)
-        moves.append(a)
-        board = position.board
-        if position.done {
-            gameOver = true
-            if analysisOn {
-                winrateHistory[moves.count] =
-                    position.winner == 0 ? 0 : (position.winner == 1 ? 1 : -1)
-            }
-            if position.winner != 0 {
-                winCells = Position.winLine(board: position.board, at: a,
-                                            player: position.winner)
-                let youWin = position.winner == humanSide
-                status = youWin ? "你赢了！" : "AI 获胜。"
-                statusIsGood = youWin
-            } else {
-                status = "平局（棋盘下满）。"
-            }
-            UINotificationFeedbackGenerator().notificationOccurred(
-                position.winner == humanSide ? .success : .warning)
-        } else {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        }
-    }
-
-    private func scheduleAITurn() {
-        guard let ev = evaluator, !gameOver,
-              position.toPlay != humanSide, !thinking else { return }
-        thinking = true
-        let sims = level.rawValue
-        status = sims > 0 ? "AI 思考中（\(sims) 次模拟）…" : "AI 思考中…"
-        progressText = ""
-        let searchTree = tree!
-        aiTask = Task { [weak self] in
-            let t0 = Date()
-            let result: MCTS.Result?
-            do {
-                result = try await Task.detached(priority: .userInitiated) { () -> MCTS.Result in
-                    try searchTree.run(sims: sims, evaluator: ev, progress: { done, total in
-                        Task { @MainActor [weak self] in
-                            self?.progressText = "\(done)/\(total)"
-                        }
-                    }, isCancelled: { Task.isCancelled })
-                }.value
-            } catch {
-                result = nil
-            }
-            guard let self, !Task.isCancelled else { return }
-            self.thinking = false
-            self.progressText = ""
-            guard let r = result, r.move >= 0 else {
-                self.status = "引擎异常，请开新对局。"
-                return
-            }
-            let ms = Int(Date().timeIntervalSince(t0) * 1000)
-            self.lastMoveMs = ms
-            self.heat = r.visits
-            let aiIsBlack = self.position.toPlay == 1
-            self.valueBlack = aiIsBlack ? r.value : -r.value
-            if self.analysisOn, let v = self.valueBlack {
-                // the AI's own search doubles as this ply's analysis
-                self.winrateHistory[self.moves.count] = v
-            }
-            self.apply(r.move)
-            if !self.gameOver {
-                self.status = "AI 落子 \(Self.coordName(r.move))（\(String(format: "%.1f", Double(ms) / 1000))s）。轮到你。"
-                self.scheduleAnalysis()
-            }
-        }
-    }
-
-    /// Screenshot/UI-test hook: play a short scripted game at raw level.
+    /// Screenshot/UI-test hook: play a short scripted game.
     private func autoplayForScreenshots() async {
         level = .s128
         let human = [7 * 15 + 7, 6 * 15 + 8, 8 * 15 + 6]
         for a in human {
             while thinking { try? await Task.sleep(nanoseconds: 100_000_000) }
             if gameOver { break }
-            playHuman(a)    // bypass the two-tap candidate preview
+            tap(a)
         }
         while thinking { try? await Task.sleep(nanoseconds: 100_000_000) }
         if analysisOn {
@@ -330,6 +453,8 @@ final class GameViewModel: ObservableObject {
         }
     }
 
+    /// Board-coordinate label. Static and UI-only, so it reads the UI constant;
+    /// `boot()` has already refused to run on a model whose board disagrees.
     nonisolated static func coordName(_ a: Int) -> String {
         let cols = Array("ABCDEFGHJKLMNOP")
         let r = a / Rules.board, c = a % Rules.board

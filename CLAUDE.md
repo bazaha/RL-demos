@@ -143,25 +143,91 @@ GPU 训练通路验证 demos：在远程 GPU 节点 **node09**（`node09.tx.bj.s
 - **无头验证**：`--use-angle=swiftshader` 下 WebGL 可用但慢 ~50 倍,驱动对局用 sims=0/32,否则 3 手 128 sims 就超 7 分钟（审查 agent 全卡死过一回）;**无头老模式窗口宽度下限 500px**,`--window-size=390` 拍出来的"溢出"是伪影,量 `innerWidth` 确认;DPR 路径用 `--force-device-scale-factor=2` 测
 - 移动端:grid 轨道要 `minmax(0,1fr)` + item `min-width:0`,否则 canvas 固有宽度撑破单列布局
 
-### iOS App（2026-08-21，分支 `ios-app`，`ios/` 目录）
+### iOS App（2026-08-21 起，`ios/` 目录；2026-08-26 改为依赖 `ios/GomokuEngine`）
 
-`export_gomoku_coreml.py` 把 iter040 转成 fp16 mlprogram（内部 fp16 保 ANE 资格）,转换脚本自带 Mac 端 CoreML 对拍(同一套 testvec)。Swift 侧 State/MCTS 逐语义复刻 trainer,XCTest 里再对拍一次。构建:`cd ios && xcodegen generate && xcodebuild -scheme Gomoku15 -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' test`。真踩过的坑：
+App target **不再自带引擎**：`ios/Gomoku15/Sources/{Evaluator,MCTS,GameCore}.swift` 那份重复实现已删除，改为通过 XcodeGen 的本地 package 依赖用 `ios/GomokuEngine`（`GomokuState`/`Tree`/`AZNet`/`AZPlayer`/`EngineSelfTest`）。留在 app 里的只有 UI、`GameViewModel`、开局库和 `Rules.swift`（纯画图用的棋盘常量，boot 时拿模型 metadata 校验）。构建：
 
-- **fp16 mlprogram 的 fp16 输出张量在 iOS 模拟器 CPU 路径上读出全零**（value 正常,policy 全 0）——转换时给 outputs 强制 `dtype=np.float32`（只在出口加 cast,内部仍 fp16）
-- **设备端 MLMultiArray 输出可能是 Float16**,把 dataPointer 按 Float32 绑定会读出 `-6.7e-41` 这类垃圾——必须按 `dataType` 分支读取;输出还有 padding（shape [1,225] strides [256,1]）
-- 模拟器偶发 "Busy / failed preflight checks" 启动失败——`xcrun simctl shutdown all` 后重跑即可;`@MainActor` 类里的纯函数要 `nonisolated` 才能进 XCTest
-- 截图钩子:launch 参数 `-autoplay` 自动下几手(128 sims)并开热力图
-- **真机性能（iPad Pro 11" M5,2026-08-24 实测）**:400 sims 0.3-0.4s、1600 sims 1.3s,合 ~0.8ms/sim——比 Python 栈(MPS/H20 batch-1 均 ~2ms/sim)快一倍以上,Swift 树遍历 + ANE 前向是全项目最快的单局面推理栈;无需算子落位分析
-- **分析模式（2026-08-27,分支 `ios-analysis`,KataGo 式）**:"分析"开关打开后每个"轮到人"的局面在**新建的隔离树**上自动跑一次搜索(`MCTS.init` 会 `copy()` 局面,与对局树零共享、零竞态;raw 档用 400 sims,其余同档位),AI 回合不重跑——其自身搜索的 `r.value` 直接进胜率走势;产物经 `Analysis.swift` 的 `MCTS.analysis(ply:topK:pvPlies:)` 提取(树的每层 Q 都是**该层行棋方视角**,所有视角换算集中在这一个文件)。UI:棋盘 top-5 候选圆标(行棋方视角胜率+访问数,cell<22pt 时只画胜率行)、**分析完成后自动虚影显示最佳分支的后续 2 步**(1/2/3 编号,点候选表行切换到其他分支)、候选表、黑方视角胜率折线;**棋盘单击永远直接落子**——第一版的"点候选先预览、再点才落子"两段式设计在真机上是灾难(候选覆盖所有合理下一手,虚影 1 看起来像已落子,用户以为落了子而 AI 不动,2026-08-27 用户实测报障后改掉)。坑:候选显示时必须抑制热力图(同在空点上会叠画);`-analysis` 启动参数(截图用)的脚本落子要走 `playHuman`;分析结果带 ply 标签,回主线程时与 `moves.count` 不符即丢弃(过期保护)
+```
+bash scripts/refresh_ios_model.sh          # 导出（如需）+ 把 mlpackage/testvec 放进 app
+cd ios && xcodegen generate && xcodebuild -scheme Gomoku15 \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+```
+
+**为什么要合并这两份引擎——曾经把 app 卡死在编译不过的两个 blocker：**
+
+- `.gitignore` 第 2 行原来是裸的 `data/`。macOS 的 git 大小写不敏感，于是它把 `Gomoku15.mlpackage` 内部的 `Data/` 也吞了：仓库里那个 mlpackage 从头到尾只有 617 字节的 `Manifest.json`，权重和 spec 从未入过 git，`coremlc` 在任何 clone 上都报 `Item does not exist for identifier: …`。改成 `/data/` 锚定到仓库根即可（`data/cifar10.npz` 照样忽略）
+- 导出器在 `9be47b3` 被重写（输入张量 `board`/fp32 → `x`/fp16，产物 `Gomoku15.mlpackage` → `results/coreml_export/GomokuAZ_b<N>.mlpackage`），但 app 那份 `Evaluator.swift` 没跟着改。**没有任何检查覆盖"app 和导出器对同一个模型的约定"**，所以只表现为启动时一个红徽章
+
+`scripts/refresh_ios_model.sh`（XcodeGen `preBuildScripts` 里以 `--check` 跑）现在守这两条，两条都验证过能拦住：staged mlpackage 的 Manifest 条目必须真实存在、权重块 >1 MB；`scripts/inspect_mlpackage.py` 直接解 `model.mlmodel` 的 protobuf 读出真实输入/输出名和 ckpt tag 与 Swift 侧比对（**不能用字符串扫描**——输入叫 `x`，单字符在任何二进制里都能撞上；也不能用 coremltools，Xcode build phase 里没有那个环境）
+
+其余真踩过的坑：
+
+- **fp16 输出张量在 iOS 模拟器 CPU 路径上读出全零**（value 正常、policy 全 0）是 2026-08 的旧记录。**2026-08-26 在 iPhone 17 Pro 模拟器上复验：当前导出器（outputs 声明 fp16）不复现**，`testBundledModelMatchesReferenceVectors` 与 `testPolicyIsNotDegenerate` 都过。不要因为这条旧记录去把 outputs 改回 fp32——真要改，`AZNet.readFloats` 现在按 `dataType` 分支，不会崩，但要重跑模拟器测试
+- **MLMultiArray 输出必须按 `dataType` 读**，按 Float32 绑 Float16 会读出 `-6.7e-41` 这类垃圾；输出还可能有 padding（shape [1,225] strides [256,1]），`AZNet.evaluate` 取 `strides[0]` 而不是假设 225
+- **`AZPlayer` 是 actor，`think` 里的 `Task.yield()` 是真挂起点**——`play`/`rewind`/`reset` 可以插进一次进行中的搜索把树换掉。actor 内用 `treeGeneration` 自守；`GameViewModel` 侧再用「同时只有一个 engineTask + 新任务先 `await previous?.value`」串行化
+- **取消要用普通 `Task {}`，不能用 `Task.detached`**：detached 是取消根，`aiTask.cancel()` 到不了里面轮询的 `Task.isCancelled`（旧代码就是这样，取消整个是死代码）。另外**被取消的任务也必须把树同步做完**再返回——`.rewind` 是唯一重建树的入口，漏掉一次就再也补不回来，之后的 `.advance` 落在旧树上，而 `GomokuState.play` 不查合法性，会静默地覆盖棋子、把 `moveCount` 推高。`testResetCancelledByAnImmediateMoveStillSyncsTheTree` 专门盯这条（验证过：把守卫挪回去，它会红）
+- 模拟器偶发 "Busy / failed preflight checks" 启动失败——`xcrun simctl shutdown all` 后重跑即可；`@MainActor` 类里的纯函数要 `nonisolated` 才能进 XCTest（但 `nonisolated static` 就读不到实例字段，`coordName` 只能用 `Rules`）
+- **「AI 视角」热力图的归一化基准是"空点里的最大访问数",不是全局最大**（2026-08-26 修）。AI 刚下的那手
+  永远是访问数最高的,而画的时候它已经被占了、按 `board[i] == 0` 排除掉——拿它当分母,等于让其余候选去够
+  一个永远够不到的门槛。**搜索越果断,热力图越空**:真机复盘一整局 25 手,有 5 手(10/11/21/22/25)一个格子
+  都没画出来(第 10 手:所辖 568 访问在已落子点,最佳备选只有 1)。改成按空点最大值归一后分别是 12/1/7/12。
+  只改归一化会过头(第 24 手亮 198 格,一片蓝),所以再按访问数取前 12 个封顶。落子点本身不会丢——它有橙色
+  的 last-move 圈。规则收在 `heatCells()` 一个函数里,按钮的 `.disabled` 也走它（原来是 `heat == nil`,
+  于是"搜索把票全投给了实际落子点"时按钮可点但点了没反应）
+- 截图钩子：launch 参数 `-autoplay` 自动下几手(128 sims)并开热力图
+- **真机性能（iPad Pro 11" M5,2026-08-24 由 App 内计时器读）**:400 sims 0.3-0.4s、1600 sims 1.3s,合 ~0.8ms/sim——比 Python 栈(MPS/H20 batch-1 均 ~2ms/sim)快一倍以上,Swift 树遍历 + ANE 前向是全项目最快的单局面推理栈;无需算子落位分析
+- **真机 compute unit 之争,2026-08-26 在 iPad Air 13" M4 / iPadOS 26.6 / Release 上测掉了**
+  （`DevicePerformanceTests`,跑法见该类的注释）：
+
+  | | ms/前向 |
+  | --- | --- |
+  | `.cpuAndNeuralEngine` | **0.545** |
+  | `.all` | **0.539**（= ANE 的 0.99×） |
+  | `.cpuOnly` | 2.191（ANE 的 4.02×） |
+
+  **iOS 的 planner 会自己挑 ANE,`.all` 在真机上没有惩罚**——macOS 上 `.all` 掉到 GPU 慢 4 倍那条结论
+  **不能外推到 iOS**。所以旧 App 用 `.all` 并没有真的损失性能（2026-08-24 那组 M5 数字就是 `.all` 跑出来的,
+  自洽）。仍然坚持写 `.cpuAndNeuralEngine`:那是保证,`.all` 是启发式,而这个 GroupNorm 图已经在一个平台上
+  被挑错过一次。搜索整体 **400 sims / 218 ms = 0.544 ms/sim（4.6 手/秒）**,比 M5 那组 0.8ms/sim 更快,
+  多半是因为那组读的是 App UI 计时器（含 UI 开销）而这里量的是纯搜索
+- **分析模式（2026-08-28 移植到 GomokuEngine,KataGo 式;首版 2026-08-27 于旧栈）**:"分析"开关打开后,每个"轮到人"的局面自动跑一次 `AZPlayer.analyze(simulations:)`（raw 档 400 sims,其余同档位）——**直接在对局树上分析**:actor 串行化天然无竞态,`treeGeneration` 防换树,且人落子后 `.advance` 保留子树、AI 应手直接热启动。提取 API 在包里（`GomokuEngine/Sources/GomokuEngine/Analysis.swift`:`MoveCandidate`/`PositionAnalysis` + `Tree.analysis(topK:pvPlies:)`,`Node.children` 是包内部所以 PV 走线必须住在包内;树每层 Q 都是**该层行棋方视角**,全部视角换算集中在这一个文件）。AI 回合不重跑——`search()` 里的 `r.value` 直接进胜率走势。UI:top-5 候选圆标(行棋方视角胜率+访问数,cell<22pt 只画胜率行)、分析完成自动虚影最佳分支后续 2 步(点候选表行切换分支)、候选表、黑方视角胜率折线;**棋盘单击永远直接落子**——首版"点候选先预览、再点落子"两段式在真机上是灾难(候选覆盖所有合理下一手,虚影像已落子,用户以为 AI 卡死,实测报障后改掉)。坑:候选显示时抑制热力图(同在空点会叠画);VM 侧 `scheduleAnalysis` 必须先 `await engineTask?.value` 等树同步到当前局面再 analyze;结果带 `ply`(= 根的 moveCount),回主线程与 `moves.count` 不符即丢弃;`-analysis` 启动参数(截图用)
+
 
 ### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
 
 对战页启动时探测 `http://127.0.0.1:8787/health`,有服务就把 AI 落子路由过去（更快,解锁 1600 sims 档）,失败/断开静默回退内嵌引擎。服务端**直接 `import train_rl_gomoku_alphazero` 复用 AZNet/State/Tree/run_sims**,零重实现——注意 import 前必须先 `os.environ.setdefault` 好 `AZ_BOARD/CH/BLOCKS`（模块级全局的老规矩）。stdlib http.server,唯一依赖 torch;CORS 头含 `Access-Control-Allow-Private-Network`（file:// 页面调 localhost 需要）。
 
-- **MacBook**：`uv venv --python 3.12 .venv-serve && uv pip install --python .venv-serve/bin/python torch numpy`,再 `.venv-serve/bin/python scripts/serve_gomoku.py`（系统 python3.14 装不了 torch）。检查点需先 rsync `iter040.pt` 到本地。实测 MPS:400 sims ≈ 0.8 s、1600 ≈ 4.9 s
+- **Mac**：环境由仓库根的 `pyproject.toml` + `uv.lock` 定义（只锁 macOS,torch+numpy 两个直接依赖）——`uv sync` 建 `.venv`,再 `uv run python scripts/serve_gomoku.py`（系统 python 装不了 torch,别用）。实测 M2 Ultra:`uv sync` 冷启动 20 s（torch 106 MB arm64 wheel,无 CUDA 包袱）,torch 2.13 + MPS。检查点需先 rsync `iter040.pt` 到本地。实测 MPS:400 sims ≈ 0.8 s、1600 ≈ 4.9 s
 - **node09**：`bash scripts/run_gomoku_serve.sh [gpu]` 起 `az_serve` 容器（只绑 node09 回环）,Mac 上 `ssh -N -L 8787:127.0.0.1:8787 node09` 打隧道后页面自动用上。实测 H20:400 sims ≈ 0.8 s、1600 ≈ 3.2 s——**batch=1 时瓶颈在 Python 树遍历,H20 对 MPS 优势有限**;停服务 `docker rm -f az_serve`
 - MPS 与 CUDA 对同一局面给出相同落子与 Q（同权重+确定性搜索）,可当跨后端一致性冒烟用
 
+### 原生 Core ML / ANE 引擎（2026-08-20，`scripts/export_gomoku_coreml.py` + `ios/GomokuEngine/`）
+
+同一份 `iter040.pt` 的第三条部署路径,给 iPhone/iPad 原生 App 用。**同机对比 M2 Ultra batch=1:
+WebGL2 78 ms、Core ML GPU 2.86 ms、torch MPS 1.66 ms、Core ML ANE 0.665 ms** —— 两个数量级的差距
+全在推理实现上,不在模型上（3.6 GFLOP/次前向,10.53M 参数）。端到端 400 次模拟一手 = 264 ms（Swift release）。
+
+- **导出**（Mac,`uv sync --group coreml`）：coremltools trace + convert,fp16 / iOS17 target / 固定 batch。
+  脚本自带三项验收,任何一项不过就非零退出：①`testvec.json` 5 个参考局面对拍（阈值沿用对战页的 5e-3 / 2e-2,
+  实测 maxΔ 1.8e-3）②**compute plan 必须 344 个算子全在 ANE**③各 compute unit 延迟。产物只有
+  `coreml_report.json` 进 git,`.mlpackage` 21 MB 可一分钟再生故忽略
+- **GroupNorm 上 ANE 是这条路最大的未知数,已经排除**：GN 不像 BN 能折进卷积,会拆成
+  reduce_mean/sub/square/sqrt/real_div 一串。实测 27 个归一化层拆出的 54 个 reduce_mean 全部 preferred=ANE,
+  零分段零回退。**所以验收里那条 compute-plan 检查不能删** —— 换 checkpoint / 换 coremltools 都可能让它变
+- **两个必须显式做的事**：①加载时要 `.cpuAndNeuralEngine`,用默认的 `.all` 调度器会挑 GPU（2.86 ms,慢 4.3 倍）
+  —— 2026-08-26 起 `testDefaultLoadAsksForTheNeuralEngine` 直接断言 `net.computeUnits`,
+  `testNeuralEngineIsFasterThanCPUOnly` 再断言实测比值 >1.5×（实测 3.6×）,`testSearchThroughput` 断言 <2 ms/sim;
+  在此之前**没有任何断言**能发现有人把它改回 `.all`;
+  查 compute plan 时 `MLComputePlan.load_from_path` 也要传同样的 compute_units,否则报告全是 GPU
+  ②Swift 必须 `-c release`：debug 下 400 次模拟 469 ms、release 264 ms
+- **Swift 侧**（`ios/GomokuEngine/`,SwiftPM,`swift test -c release` 可跑）：`GomokuState` / `AZNet` / `Tree` /
+  `AZPlayer`(actor) / `EngineSelfTest`。release 下每次模拟 0.661 ms 而裸推理 0.665 ms —— **搜索树开销已经小到测不出**,
+  所以不需要 virtual-loss 批量搜索（ANE 上 batch=1 也只比 batch=8 差 1.6 倍）
+- 六条移植语义（终局值 mover 视角、backup 先翻号再累加、根 W/N 不要再取负、q 在 N==0 取 0、掩码在 softmax 之前、
+  温度采样先除最大访问数再取幂）在 `ios/GomokuEngine/README.md` 里逐条写了,其中三条有单元测试兜底
+- 设备估算（**未在真机验证**）：iPad Pro M5 每手 0.2-0.4 s、iPhone 16 Pro Max 0.4-0.8 s。瓶颈在内存带宽
+  （21 MB fp16 权重每次前向都要流过,batch=1 约需 50 GB/s,而 A18 Pro 总带宽约 60 GB/s）。
+  真机数字用 `swift test --filter testSearchThroughput` 直接量
 ### 开局库（2026-08-26，分支 `opening-book`，网页 + iOS 双端）
 
 从 iter040 大批自对弈中挖出的高胜率开局,两端共用一份 `results/book/gomoku_book.json`(17 条,~6 KB)。四步流水线:

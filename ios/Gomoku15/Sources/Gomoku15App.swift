@@ -18,7 +18,7 @@ struct ContentView: View {
         NavigationStack {
             mainBody
                 .toolbar {
-                    if let book {
+                    if book != nil {
                         ToolbarItem(placement: .topBarTrailing) {
                             Button {
                                 showBook = true
@@ -110,7 +110,7 @@ struct ContentView: View {
                             .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .buttonStyle(.bordered)
-                    .disabled(vm.heat == nil)
+                    .disabled(!vm.hasHeatToShow)
                     Button(action: { vm.toggleAnalysis() }) {
                         Label("分析", systemImage: "waveform.path.ecg")
                             .lineLimit(1).minimumScaleFactor(0.75)

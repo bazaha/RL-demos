@@ -1,0 +1,738 @@
+<title>AZNet 与 MCTS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,500;0,6..72,600;1,6..72,500&family=Noto+Serif+SC:wght@600&family=Source+Sans+3:wght@400;600&family=Noto+Sans+SC:wght@400;500&family=JetBrains+Mono:wght@400;500;700&display=swap">
+
+<style>
+:root{
+  --bg:#E8EBE6; --surface:#F6F8F3; --surface-2:#FDFDFB;
+  --ink:#141A18; --muted:#5C6A64; --line:#C4CDC5;
+  --accent:#0D6B6C; --accent-wash:#D4E5E2;
+  --warm:#9C5A0F; --warm-wash:#EFE1C8;
+  --stone-b:#171C1A; --stone-w:#FCFDFA;
+  --display:"Newsreader","Noto Serif SC",Georgia,serif;
+  --body:"Source Sans 3","Noto Sans SC",system-ui,sans-serif;
+  --mono:"JetBrains Mono","Noto Sans SC",ui-monospace,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#111615; --surface:#1A201E; --surface-2:#212927;
+    --ink:#E4EAE5; --muted:#93A09A; --line:#303B38;
+    --accent:#5CC4BE; --accent-wash:#123330;
+    --warm:#D89C4E; --warm-wash:#372715;
+    --stone-b:#0A0D0C; --stone-w:#E9EEE9;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#111615; --surface:#1A201E; --surface-2:#212927;
+  --ink:#E4EAE5; --muted:#93A09A; --line:#303B38;
+  --accent:#5CC4BE; --accent-wash:#123330;
+  --warm:#D89C4E; --warm-wash:#372715;
+  --stone-b:#0A0D0C; --stone-w:#E9EEE9;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:var(--body); font-size:16.5px; line-height:1.72;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1060px; margin:0 auto; padding:0 28px 96px}
+.prose{max-width:68ch}
+
+/* ---------- masthead ---------- */
+header.top{
+  border-bottom:1px solid var(--line);
+  padding:64px 0 34px; margin-bottom:44px;
+}
+.eyebrow{
+  font-family:var(--mono); font-size:11.5px; font-weight:500;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--muted);
+  display:flex; flex-wrap:wrap; gap:10px 18px; margin-bottom:22px;
+}
+h1{
+  font-family:var(--display); font-weight:600; font-size:clamp(38px,6.4vw,62px);
+  line-height:1.06; letter-spacing:-.015em; margin:0 0 18px; text-wrap:balance;
+}
+h1 .lat{font-style:normal}
+.standfirst{
+  font-family:var(--display); font-size:clamp(18px,2.4vw,21px); line-height:1.6;
+  color:var(--muted); max-width:60ch; margin:0;
+}
+
+/* ---------- sections ---------- */
+section{margin:0 0 68px}
+h2{
+  font-family:var(--display); font-weight:600; font-size:clamp(24px,3.2vw,31px);
+  line-height:1.22; letter-spacing:-.01em; margin:0 0 6px; text-wrap:balance;
+  display:flex; align-items:baseline; gap:14px;
+}
+h2::before{
+  content:""; flex:none; width:11px; height:11px; border-radius:50%;
+  background:var(--ink); transform:translateY(-2px);
+}
+h2 + .deck{
+  font-size:15px; color:var(--muted); margin:0 0 26px 25px; max-width:62ch;
+}
+h3{
+  font-family:var(--body); font-weight:600; font-size:16px; letter-spacing:.01em;
+  margin:34px 0 10px;
+}
+p{margin:0 0 16px}
+a{color:var(--accent)}
+code{
+  font-family:var(--mono); font-size:.86em; background:var(--surface);
+  border:1px solid var(--line); border-radius:4px; padding:1px 5px;
+}
+strong{font-weight:600}
+
+/* ---------- figures ---------- */
+figure{
+  margin:30px 0; padding:22px 20px 16px;
+  background:var(--surface); border:1px solid var(--line); border-radius:3px;
+}
+.figscroll{overflow-x:auto}
+figure svg{display:block; width:100%; min-width:640px; height:auto; color:var(--ink)}
+figcaption{
+  margin-top:14px; padding-top:12px; border-top:1px solid var(--line);
+  font-size:13.5px; line-height:1.6; color:var(--muted); max-width:74ch;
+}
+figcaption b{color:var(--ink); font-weight:600}
+
+svg text{font-family:var(--mono); fill:currentColor}
+.t{font-size:13px; font-weight:500}
+.ts{font-size:11px; fill:var(--muted)}
+.tt{font-size:11.5px; font-weight:700; letter-spacing:.06em}
+.box{fill:var(--surface-2); stroke:var(--line); stroke-width:1.2}
+.boxa{fill:var(--accent-wash); stroke:var(--accent); stroke-width:1.2}
+.boxw{fill:var(--warm-wash); stroke:var(--warm); stroke-width:1.2}
+.ar{fill:none; stroke:currentColor; stroke-width:1.4}
+.ara{fill:none; stroke:var(--accent); stroke-width:1.6}
+.arw{fill:none; stroke:var(--warm); stroke-width:1.6}
+.dash{stroke-dasharray:5 4}
+.acc{fill:var(--accent)}
+.wrm{fill:var(--warm)}
+.hair{stroke:var(--line); stroke-width:1; fill:none}
+
+/* ---------- data bits ---------- */
+.formula{
+  font-family:var(--mono); font-size:15px; line-height:2.1;
+  background:var(--surface); border:1px solid var(--line);
+  border-left:3px solid var(--accent);
+  border-radius:3px; padding:18px 22px; margin:22px 0; overflow-x:auto;
+}
+.formula .note{font-size:12.5px; color:var(--muted)}
+table{
+  width:100%; border-collapse:collapse; margin:24px 0; font-size:14px;
+  font-variant-numeric:tabular-nums;
+}
+th,td{text-align:left; padding:9px 14px 9px 0; border-bottom:1px solid var(--line)}
+th{
+  font-family:var(--mono); font-size:11px; font-weight:500; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--muted); border-bottom-color:var(--ink);
+}
+td.num, th.num{text-align:right; font-family:var(--mono); padding-right:0}
+td.k{font-family:var(--mono); font-size:13px}
+ul{margin:0 0 16px; padding-left:20px}
+li{margin-bottom:7px}
+li::marker{color:var(--accent)}
+
+.cfg{display:flex; flex-wrap:wrap; gap:8px; margin-top:24px}
+.chip{
+  font-family:var(--mono); font-size:12px; padding:5px 11px;
+  border:1px solid var(--line); border-radius:100px; background:var(--surface);
+  color:var(--muted); white-space:nowrap;
+}
+.chip b{color:var(--ink); font-weight:500}
+
+footer{
+  border-top:1px solid var(--line); padding-top:24px; margin-top:20px;
+  font-size:13.5px; color:var(--muted);
+}
+footer code{background:none; border:none; padding:0; color:var(--muted)}
+@media (max-width:640px){
+  .wrap{padding:0 18px 64px}
+  header.top{padding-top:40px}
+}
+</style>
+
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">
+    <span>RL-demos</span>
+    <span>scripts/train_rl_gomoku_alphazero.py</span>
+    <span>1427 行 · 单文件</span>
+  </div>
+  <h1>AlphaZero 五子棋<br><span class="lat">网络与搜索的结构</span></h1>
+  <p class="standfirst">一张网络、一棵树、一个回放缓冲区。下面按数据流的顺序把三者拆开画：从 4 个输入平面到策略/价值两个头，从 <span style="font-family:var(--mono);font-size:.9em">Node</span> 里的三条扁平数组到一次 PUCT 模拟的四个动作。</p>
+  <div class="cfg">
+    <span class="chip">棋盘 <b>9×9</b> / <b>15×15</b></span>
+    <span class="chip">通道 <b>128</b> / <b>192</b></span>
+    <span class="chip">残差块 <b>8</b> / <b>12</b></span>
+    <span class="chip">参数 <b>2.92M</b> / <b>10.53M</b></span>
+    <span class="chip">归一化 <b>GroupNorm(8)</b></span>
+    <span class="chip">c_puct <b>3.0</b></span>
+  </div>
+</header>
+
+<!-- ===================== 1. 闭环 ===================== -->
+<section>
+  <h2>一轮训练的闭环</h2>
+  <p class="deck">整个系统只有一个循环：自我对弈产数据 → 进环形缓冲 → 采样做梯度 → 新权重发回对弈进程。树搜索是 Python/CPU 密集的，所以对弈拆成多进程；梯度更新只在一张卡上。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 920 330" role="img" aria-label="训练闭环：8 个自我对弈进程产生 X/pi/z 写入环形缓冲区，训练进程采样 512 做 500 步梯度，再把 state_dict 广播回对弈进程">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="a1a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--accent)"/>
+        </marker>
+      </defs>
+
+      <!-- selfplay pool -->
+      <rect class="box" x="24" y="42" width="252" height="176" rx="3"/>
+      <text class="tt" x="40" y="66">SELF-PLAY POOL</text>
+      <text class="ts" x="40" y="84">spawn · 每进程一个 CUDA context</text>
+      <g>
+        <rect class="boxa" x="40" y="96" width="52" height="30" rx="2"/><text class="ts" x="66" y="115" text-anchor="middle">w0</text>
+        <rect class="boxa" x="98" y="96" width="52" height="30" rx="2"/><text class="ts" x="124" y="115" text-anchor="middle">w1</text>
+        <rect class="boxa" x="156" y="96" width="52" height="30" rx="2"/><text class="ts" x="182" y="115" text-anchor="middle">w2</text>
+        <rect class="boxa" x="214" y="96" width="52" height="30" rx="2"/><text class="ts" x="240" y="115" text-anchor="middle">w3</text>
+        <rect class="boxa" x="40" y="130" width="52" height="30" rx="2"/><text class="ts" x="66" y="149" text-anchor="middle">w4</text>
+        <rect class="boxa" x="98" y="130" width="52" height="30" rx="2"/><text class="ts" x="124" y="149" text-anchor="middle">w5</text>
+        <rect class="boxa" x="156" y="130" width="52" height="30" rx="2"/><text class="ts" x="182" y="149" text-anchor="middle">w6</text>
+        <rect class="boxa" x="214" y="130" width="52" height="30" rx="2"/><text class="ts" x="240" y="149" text-anchor="middle">w7</text>
+      </g>
+      <line class="hair" x1="40" y1="172" x2="266" y2="172"/>
+      <text class="ts" x="40" y="190">cuda:0 ×2  cuda:1 ×2  cuda:2 ×2  cuda:3 ×2</text>
+      <text class="ts" x="40" y="206">每轮 256 局，lockstep 推进</text>
+
+      <!-- arrow to buffer -->
+      <path class="ar" d="M276 128 H360" marker-end="url(#a1)"/>
+      <text class="t" x="318" y="118" text-anchor="middle">X, π, z</text>
+      <text class="ts" x="318" y="146" text-anchor="middle">每一步存一条</text>
+
+      <!-- buffer -->
+      <rect class="box" x="362" y="60" width="176" height="140" rx="3"/>
+      <text class="tt" x="378" y="84">REPLAY BUFFER</text>
+      <text class="ts" x="378" y="102">环形，覆盖最旧</text>
+      <rect class="boxa" x="378" y="114" width="144" height="20" rx="2"/>
+      <text class="ts" x="450" y="128" text-anchor="middle">x  int8 4×9×9</text>
+      <rect class="boxa" x="378" y="138" width="144" height="20" rx="2"/>
+      <text class="ts" x="450" y="152" text-anchor="middle">π  f32 81</text>
+      <rect class="boxa" x="378" y="162" width="144" height="20" rx="2"/>
+      <text class="ts" x="450" y="176" text-anchor="middle">z  f32</text>
+      <text class="ts" x="378" y="196">cap 200,000</text>
+
+      <!-- arrow to trainer -->
+      <path class="ar" d="M538 128 H624" marker-end="url(#a1)"/>
+      <text class="t" x="581" y="118" text-anchor="middle">batch 512</text>
+      <text class="ts" x="581" y="146" text-anchor="middle">8 组二面体变换</text>
+
+      <!-- trainer -->
+      <rect class="box" x="626" y="42" width="266" height="176" rx="3"/>
+      <text class="tt" x="642" y="66">TRAINER · cuda:0</text>
+      <text class="ts" x="642" y="86">500 步 / 轮</text>
+      <rect class="boxw" x="642" y="98" width="234" height="26" rx="2"/>
+      <text class="ts" x="759" y="115" text-anchor="middle">loss = CE(π, p) + MSE(z, v)</text>
+      <text class="ts" x="642" y="144">AdamW  lr 2e-3  wd 1e-4</text>
+      <text class="ts" x="642" y="162">clip_grad_norm 5.0</text>
+      <text class="ts" x="642" y="180">MultiStepLR ×0.5 @ 50% / 75%</text>
+      <text class="ts" x="642" y="202">存 iterNNN.pt</text>
+
+      <!-- feedback -->
+      <path class="ara" d="M759 218 V282 H150 V218" marker-end="url(#a1a)"/>
+      <text class="t" x="455" y="303" text-anchor="middle" fill="var(--accent)">state_dict → 每个 worker（下一轮）</text>
+    </svg>
+    </div>
+    <figcaption><b>数据只朝一个方向流。</b>树遍历在 Python 里跑，随对局数线性增长，因此 8 个 worker 分摊 CPU；GPU 前向靠 lockstep 把几百局的叶子节点凑成一个 batch。缓冲区是定长环形数组，写满就覆盖最旧的局面。</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 2. 输入 ===================== -->
+<section>
+  <h2>输入：4 个平面，永远站在该走子一方</h2>
+  <p class="deck">网络从不知道自己执黑还是执白 —— <code>encode()</code> 把棋盘旋转到"我"的视角，所以同一份权重同时是黑棋和白棋。第 4 个平面才把先后手这件事补回去（五子棋先手优势极大，价值头需要它）。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 920 250" role="img" aria-label="四个输入平面：我方棋子、对方棋子、对手上一手、执黑标志">
+      <defs>
+        <pattern id="g9" width="12" height="12" patternUnits="userSpaceOnUse">
+          <path d="M12 0 H0 V12" fill="none" stroke="var(--line)" stroke-width="1"/>
+        </pattern>
+      </defs>
+
+      <g transform="translate(48,44)">
+        <rect x="0" y="0" width="108" height="108" fill="url(#g9)" stroke="var(--line)"/>
+        <rect class="acc" x="48" y="48" width="12" height="12"/>
+        <rect class="acc" x="60" y="48" width="12" height="12"/>
+        <text class="t" x="0" y="-18">plane 0</text>
+        <text class="ts" x="0" y="128">board == to_play</text>
+        <text class="ts" x="0" y="144">我方棋子</text>
+      </g>
+      <g transform="translate(258,44)">
+        <rect x="0" y="0" width="108" height="108" fill="url(#g9)" stroke="var(--line)"/>
+        <rect class="acc" x="48" y="36" width="12" height="12"/>
+        <rect class="acc" x="60" y="60" width="12" height="12"/>
+        <text class="t" x="0" y="-18">plane 1</text>
+        <text class="ts" x="0" y="128">board == -to_play</text>
+        <text class="ts" x="0" y="144">对方棋子</text>
+      </g>
+      <g transform="translate(468,44)">
+        <rect x="0" y="0" width="108" height="108" fill="url(#g9)" stroke="var(--line)"/>
+        <rect class="wrm" x="60" y="60" width="12" height="12"/>
+        <text class="t" x="0" y="-18">plane 2</text>
+        <text class="ts" x="0" y="128">last_move</text>
+        <text class="ts" x="0" y="144">对手刚落的一手</text>
+      </g>
+      <g transform="translate(678,44)">
+        <rect x="0" y="0" width="108" height="108" fill="var(--accent-wash)" stroke="var(--line)"/>
+        <rect x="0" y="0" width="108" height="108" fill="url(#g9)"/>
+        <text class="t" x="0" y="-18">plane 3</text>
+        <text class="ts" x="0" y="128">to_play == 1 ? 1 : 0</text>
+        <text class="ts" x="0" y="144">整片常量：我是黑棋</text>
+      </g>
+
+      <path class="ar" d="M846 98 H886" marker-end="url(#a1)"/>
+      <text class="ts" x="866" y="130" text-anchor="middle">4×9×9</text>
+
+      <line class="hair" x1="48" y1="196" x2="886" y2="196"/>
+      <text class="ts" x="48" y="220">缓冲区里按 int8 存，采样时才转 float32 并做 8 种二面体变换（4 旋转 × 2 翻转），π 跟着一起转</text>
+    </svg>
+    </div>
+    <figcaption><b>没有历史平面。</b>AlphaGo Zero 用 8 步历史来处理劫争，五子棋没有这个问题，落子即永久，当前局面就是完整状态。<code>plane 2</code> 保留下来纯粹是给网络一个注意力锚点：对手刚下在哪儿，通常就是该应的地方。</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 3. AZNet ===================== -->
+<section>
+  <h2>AZNet：一个躯干，两个头</h2>
+  <p class="deck">标准 AlphaZero 结构，只有一处刻意的偏离 —— 全部用 GroupNorm 而不是 BatchNorm。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 960 400" role="img" aria-label="AZNet 结构：4x9x9 输入经 stem 卷积到 128 通道，过 8 个残差块，再分成策略头和价值头">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <!-- input -->
+      <rect class="boxa" x="20" y="168" width="86" height="56" rx="3"/>
+      <text class="t" x="63" y="192" text-anchor="middle">输入</text>
+      <text class="ts" x="63" y="210" text-anchor="middle">4×9×9</text>
+      <path class="ar" d="M108 196 H140" marker-end="url(#a2)"/>
+
+      <!-- stem -->
+      <rect class="box" x="142" y="152" width="150" height="88" rx="3"/>
+      <text class="tt" x="217" y="176" text-anchor="middle">STEM</text>
+      <text class="ts" x="217" y="196" text-anchor="middle">Conv3×3 4→128</text>
+      <text class="ts" x="217" y="212" text-anchor="middle">GroupNorm(8)</text>
+      <text class="ts" x="217" y="228" text-anchor="middle">ReLU</text>
+      <path class="ar" d="M294 196 H326" marker-end="url(#a2)"/>
+
+      <!-- tower -->
+      <rect class="box" x="340" y="140" width="150" height="88" rx="3" opacity=".45"/>
+      <rect class="box" x="334" y="146" width="150" height="88" rx="3" opacity=".7"/>
+      <rect class="boxa" x="328" y="152" width="150" height="88" rx="3"/>
+      <text class="tt" x="403" y="178" text-anchor="middle">RESBLOCK ×8</text>
+      <text class="ts" x="403" y="200" text-anchor="middle">128 通道全程不变</text>
+      <text class="ts" x="403" y="220" text-anchor="middle">无下采样，无池化</text>
+      <text class="ts" x="403" y="266" text-anchor="middle">h : 128×9×9</text>
+
+      <!-- split -->
+      <path class="ar" d="M480 196 H520 V96 H556" marker-end="url(#a2)"/>
+      <path class="ar" d="M480 196 H520 V300 H556" marker-end="url(#a2)"/>
+
+      <!-- policy head -->
+      <rect class="box" x="558" y="52" width="196" height="88" rx="3"/>
+      <text class="tt" x="574" y="76">POLICY HEAD</text>
+      <text class="ts" x="574" y="96">Conv1×1 128→32 · GN · ReLU</text>
+      <text class="ts" x="574" y="114">Flatten 2592</text>
+      <text class="ts" x="574" y="132">Linear 2592 → 81</text>
+      <path class="ar" d="M756 96 H796" marker-end="url(#a2)"/>
+      <rect class="boxa" x="798" y="66" width="140" height="60" rx="3"/>
+      <text class="t" x="868" y="90" text-anchor="middle">logits 81</text>
+      <text class="ts" x="868" y="110" text-anchor="middle">softmax → P(a)</text>
+
+      <!-- value head -->
+      <rect class="box" x="558" y="248" width="196" height="106" rx="3"/>
+      <text class="tt" x="574" y="272">VALUE HEAD</text>
+      <text class="ts" x="574" y="292">Conv1×1 128→32 · GN · ReLU</text>
+      <text class="ts" x="574" y="310">Flatten 2592</text>
+      <text class="ts" x="574" y="328">Linear → 128 · ReLU</text>
+      <text class="ts" x="574" y="346">Linear → 1 · tanh</text>
+      <path class="ar" d="M756 300 H796" marker-end="url(#a2)"/>
+      <rect class="boxw" x="798" y="270" width="140" height="60" rx="3"/>
+      <text class="t" x="868" y="294" text-anchor="middle">v ∈ [−1, 1]</text>
+      <text class="ts" x="868" y="314" text-anchor="middle">我方胜率</text>
+
+      <line class="hair" x1="20" y1="378" x2="938" y2="378"/>
+      <text class="ts" x="20" y="396">9×9 配置：躯干 236 万参数（81%），两个头合计 55 万 —— 参数几乎全在残差塔里</text>
+    </svg>
+    </div>
+    <figcaption><b>两个头共享全部卷积特征，只在最后 1×1 卷积处分叉。</b>策略头输出 81 个 logit（每个交叉点一个），价值头压到标量并过 tanh。注意价值头的 <code>Linear 2592→128</code> 是全连接：棋盘一变大，这里的参数量按 N⁴ 涨，15×15 时策略头的 <code>7200→225</code> 一层就 163 万参数。</figcaption>
+  </figure>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 880 200" role="img" aria-label="残差块内部：两次 3x3 卷积加 GroupNorm，跳连在第二个归一化之后相加再过 ReLU">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <text class="tt" x="24" y="30">RESBLOCK 内部</text>
+
+      <circle class="acc" cx="40" cy="118" r="4"/>
+      <text class="ts" x="40" y="150" text-anchor="middle">x</text>
+      <path class="ar" d="M46 118 H86" marker-end="url(#a3)"/>
+
+      <rect class="box" x="88" y="94" width="104" height="48" rx="3"/>
+      <text class="ts" x="140" y="114" text-anchor="middle">Conv3×3</text>
+      <text class="ts" x="140" y="130" text-anchor="middle">bias=False</text>
+      <path class="ar" d="M194 118 H222" marker-end="url(#a3)"/>
+
+      <rect class="box" x="224" y="94" width="94" height="48" rx="3"/>
+      <text class="ts" x="271" y="114" text-anchor="middle">GroupNorm</text>
+      <text class="ts" x="271" y="130" text-anchor="middle">8 组</text>
+      <path class="ar" d="M320 118 H348" marker-end="url(#a3)"/>
+
+      <rect class="box" x="350" y="94" width="66" height="48" rx="3"/>
+      <text class="ts" x="383" y="122" text-anchor="middle">ReLU</text>
+      <path class="ar" d="M418 118 H446" marker-end="url(#a3)"/>
+
+      <rect class="box" x="448" y="94" width="104" height="48" rx="3"/>
+      <text class="ts" x="500" y="114" text-anchor="middle">Conv3×3</text>
+      <text class="ts" x="500" y="130" text-anchor="middle">bias=False</text>
+      <path class="ar" d="M554 118 H582" marker-end="url(#a3)"/>
+
+      <rect class="box" x="584" y="94" width="94" height="48" rx="3"/>
+      <text class="ts" x="631" y="114" text-anchor="middle">GroupNorm</text>
+      <text class="ts" x="631" y="130" text-anchor="middle">8 组</text>
+      <path class="ar" d="M680 118 H714" marker-end="url(#a3)"/>
+
+      <circle class="box" cx="728" cy="118" r="15"/>
+      <text class="t" x="728" y="123" text-anchor="middle">+</text>
+      <path class="ar" d="M744 118 H772" marker-end="url(#a3)"/>
+
+      <rect class="box" x="774" y="94" width="66" height="48" rx="3"/>
+      <text class="ts" x="807" y="122" text-anchor="middle">ReLU</text>
+
+      <!-- skip -->
+      <path class="ara dash" d="M40 112 V54 H728 V100" marker-end="url(#a1a)"/>
+      <text class="ts" x="384" y="44" text-anchor="middle" fill="var(--accent)">恒等跳连</text>
+    </svg>
+    </div>
+    <figcaption><b>ReLU 在相加之后，不在之前。</b>第二个 GroupNorm 的输出直接与 <code>x</code> 相加，梯度可以沿跳连原样穿过 8 层。卷积不带 bias —— 紧跟其后的归一化里的仿射项已经承担了这个自由度。</figcaption>
+  </figure>
+
+  <h3>为什么是 GroupNorm</h3>
+  <p>自我对弈是 lockstep 的：256 局同时开局，随着一局局分出胜负，送进网络的 batch 从 256 一路缩到个位数。BatchNorm 的统计量会跟着 batch 规模抖，而且 <code>train()</code> 和 <code>eval()</code> 行为不一致，running stats 会被自我对弈的分布持续污染。GroupNorm 在通道维内做统计，与 batch 大小无关、两种模式下完全相同 —— 一局棋自己算自己的。</p>
+
+  <table>
+    <thead><tr><th>模块</th><th class="num">9×9 / 128ch / 8blk</th><th class="num">15×15 / 192ch / 12blk</th></tr></thead>
+    <tbody>
+      <tr><td class="k">stem</td><td class="num">4,864</td><td class="num">7,296</td></tr>
+      <tr><td class="k">residual tower</td><td class="num">2,363,392</td><td class="num">7,971,840</td></tr>
+      <tr><td class="k">policy head</td><td class="num">214,193</td><td class="num">1,626,433</td></tr>
+      <tr><td class="k">value head</td><td class="num">336,193</td><td class="num">928,065</td></tr>
+      <tr><td class="k"><strong>合计</strong></td><td class="num"><strong>2,918,642</strong></td><td class="num"><strong>10,533,634</strong></td></tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ===================== 4. loss ===================== -->
+<section>
+  <h2>训练目标</h2>
+  <p class="deck">两项相加，权重都是 1。策略头去拟合搜索给出的访问分布，价值头去拟合这局棋最终的胜负。</p>
+
+  <div class="formula">
+p_loss = −Σ<sub>a</sub> π(a) · log softmax(logits)(a)  <span class="note">← 交叉熵，目标是软标签 π = N/ΣN</span><br>
+v_loss = (v − z)²  <span class="note">← z ∈ {−1, 0, +1}，从该局面走子方的视角</span><br>
+loss   = p_loss + v_loss<br>
+<span class="note">另外每步记一次策略熵 −Σ p log p，用来看网络有没有过早坍缩到少数几个点</span>
+  </div>
+
+  <p><code>π</code> 是<strong>搜索</strong>的输出而不是网络自己的输出 —— 这就是 AlphaZero 自举的全部机制：MCTS 用当前网络做几百次前向，得到一个比网络原始策略更强的分布，网络再去追这个分布，下一轮搜索因此更准。<code>z</code> 则是那一局真正下完的结果，按存这条记录时轮到谁走来定符号。</p>
+
+  <h3>采样时才做对称增强</h3>
+  <p>五子棋的规则在 8 种二面体变换下不变，所以每个局面天然有 8 份等价数据。缓冲区只存原始那一份（省 8 倍内存），<code>Buffer.sample()</code> 把一个 batch 切成 8 块，每块套一种变换 —— 向量化、无偏，而且同一个局面在不同 batch 里会以不同朝向出现。<code>π</code> 必须跟着 reshape 成 9×9 一起转，否则策略标签和棋盘就错位了。</p>
+</section>
+
+<!-- ===================== 5. MCTS 数据结构 ===================== -->
+<section>
+  <h2>树的内存布局</h2>
+  <p class="deck">边的统计量不放在子节点里，而是以三条定长数组的形式放在<strong>父节点</strong>上 —— AlphaZero 的经典做法，选择一步只需要几个 numpy 向量运算，不用遍历子节点对象。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 920 340" role="img" aria-label="节点内存布局：父节点持有 P、N、W 三条长度 81 的数组和一个稀疏的 children 字典，只有被走过的动作才会实例化子节点">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <rect class="box" x="24" y="30" width="470" height="248" rx="3"/>
+      <text class="tt" x="44" y="56">NODE</text>
+      <text class="ts" x="44" y="74">state · P · N · W · legal · children · expanded</text>
+
+      <g transform="translate(44,92)">
+        <text class="ts" x="0" y="12">P</text>
+        <text class="ts" x="0" y="26" fill="var(--muted)">先验</text>
+        <g transform="translate(46,0)">
+          <rect class="box" x="0" y="0" width="26" height="22"/><rect class="box" x="26" y="0" width="26" height="22"/>
+          <rect class="boxa" x="52" y="0" width="26" height="22"/><rect class="box" x="78" y="0" width="26" height="22"/>
+          <rect class="box" x="104" y="0" width="26" height="22"/><rect class="boxa" x="130" y="0" width="26" height="22"/>
+          <rect class="box" x="156" y="0" width="26" height="22"/><rect class="box" x="182" y="0" width="26" height="22"/>
+          <text class="ts" x="220" y="16">…  长度 81</text>
+        </g>
+      </g>
+      <g transform="translate(44,138)">
+        <text class="ts" x="0" y="12">N</text>
+        <text class="ts" x="0" y="26" fill="var(--muted)">访问数</text>
+        <g transform="translate(46,0)">
+          <rect class="box" x="0" y="0" width="26" height="22"/><rect class="box" x="26" y="0" width="26" height="22"/>
+          <rect class="boxa" x="52" y="0" width="26" height="22"/><rect class="box" x="78" y="0" width="26" height="22"/>
+          <rect class="box" x="104" y="0" width="26" height="22"/><rect class="boxa" x="130" y="0" width="26" height="22"/>
+          <rect class="box" x="156" y="0" width="26" height="22"/><rect class="box" x="182" y="0" width="26" height="22"/>
+          <text class="ts" x="220" y="16">float32</text>
+        </g>
+      </g>
+      <g transform="translate(44,184)">
+        <text class="ts" x="0" y="12">W</text>
+        <text class="ts" x="0" y="26" fill="var(--muted)">累计价值</text>
+        <g transform="translate(46,0)">
+          <rect class="box" x="0" y="0" width="26" height="22"/><rect class="box" x="26" y="0" width="26" height="22"/>
+          <rect class="boxa" x="52" y="0" width="26" height="22"/><rect class="box" x="78" y="0" width="26" height="22"/>
+          <rect class="box" x="104" y="0" width="26" height="22"/><rect class="boxa" x="130" y="0" width="26" height="22"/>
+          <rect class="box" x="156" y="0" width="26" height="22"/><rect class="box" x="182" y="0" width="26" height="22"/>
+          <text class="ts" x="220" y="16">Q = W / max(N,1)</text>
+        </g>
+      </g>
+      <text class="ts" x="44" y="250">legal : bool[81]，非法点在打分时置 −1e9</text>
+      <text class="ts" x="44" y="268">children : dict —— 只有走过的动作才有条目</text>
+
+      <!-- children -->
+      <path class="ara" d="M496 152 H556 V78 H592" marker-end="url(#a1a)"/>
+      <path class="ara" d="M496 152 H556 V226 H592" marker-end="url(#a1a)"/>
+      <text class="ts" x="540" y="66" fill="var(--accent)">a=40</text>
+      <text class="ts" x="540" y="252" fill="var(--accent)">a=44</text>
+
+      <rect class="box" x="594" y="46" width="200" height="66" rx="3"/>
+      <text class="t" x="610" y="72">Node</text>
+      <text class="ts" x="610" y="94">state 已落子，expanded=False</text>
+
+      <rect class="box" x="594" y="194" width="200" height="66" rx="3"/>
+      <text class="t" x="610" y="220">Node</text>
+      <text class="ts" x="610" y="242">已扩展，自己也有 P/N/W</text>
+
+      <line class="hair" x1="820" y1="46" x2="820" y2="260"/>
+      <text class="ts" x="836" y="126">其余 79</text>
+      <text class="ts" x="836" y="144">个动作</text>
+      <text class="ts" x="836" y="162">还没有</text>
+      <text class="ts" x="836" y="180">对象</text>
+    </svg>
+    </div>
+    <figcaption><b>节点是惰性创建的。</b><code>select()</code> 沿 PUCT 往下走，遇到 <code>children</code> 里没有的动作才 <code>clone()</code> 棋盘并 <code>play()</code> 一手建节点。一棵 400 次模拟的树最多只有 400 个节点，而不是 81 的幂。</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 6. 一次模拟 ===================== -->
+<section>
+  <h2>一次模拟的四个动作</h2>
+  <p class="deck">选择 → 扩展 → 评估 → 回传。没有 rollout：AlphaZero 用价值头的一个标量代替了传统 MCTS 里随机走到终局的那段模拟。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 920 430" role="img" aria-label="一次 MCTS 模拟：从根节点按 PUCT 下行到未扩展的叶子，网络给出先验和价值，价值沿路径逐层取反回传">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="a5w" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--warm)"/>
+        </marker>
+      </defs>
+
+      <!-- phase labels -->
+      <text class="tt" x="24" y="46" fill="var(--accent)">① 选择</text>
+      <text class="ts" x="24" y="66">argmax Q + U</text>
+      <text class="ts" x="24" y="82">在已扩展的</text>
+      <text class="ts" x="24" y="98">节点里下行</text>
+
+      <text class="tt" x="24" y="240" fill="var(--accent)">② 扩展</text>
+      <text class="ts" x="24" y="260">叶子调网络</text>
+      <text class="ts" x="24" y="276">P ← softmax</text>
+      <text class="ts" x="24" y="292">× legal 再归一</text>
+
+      <text class="tt" x="24" y="336" fill="var(--warm)">③ 评估</text>
+      <text class="ts" x="24" y="356">v ← 价值头</text>
+      <text class="ts" x="24" y="372">终局则用真实</text>
+      <text class="ts" x="24" y="388">胜负替代</text>
+
+      <!-- tree -->
+      <g>
+        <!-- root -->
+        <circle class="boxa" cx="420" cy="60" r="20"/>
+        <text class="ts" x="420" y="65" text-anchor="middle">根</text>
+        <text class="ts" x="452" y="52">ΣN = 400</text>
+        <text class="ts" x="452" y="68" fill="var(--accent)">+ Dirichlet 噪声</text>
+
+        <!-- level 1 -->
+        <line class="hair" x1="404" y1="76" x2="330" y2="128"/>
+        <line class="hair" x1="436" y1="76" x2="516" y2="128"/>
+        <path class="ara" d="M414 78 L360 130" marker-end="url(#a1a)"/>
+        <circle class="box" cx="330" cy="148" r="20"/>
+        <text class="ts" x="330" y="153" text-anchor="middle">·</text>
+        <circle class="box" cx="516" cy="148" r="20"/>
+        <text class="ts" x="516" y="153" text-anchor="middle">·</text>
+        <text class="ts" x="234" y="128" fill="var(--accent)">选中 a₁</text>
+
+        <!-- level 2 -->
+        <line class="hair" x1="316" y1="164" x2="256" y2="212"/>
+        <line class="hair" x1="344" y1="164" x2="404" y2="212"/>
+        <path class="ara" d="M340 166 L396 214" marker-end="url(#a1a)"/>
+        <circle class="box" cx="248" cy="232" r="20"/>
+        <text class="ts" x="248" y="237" text-anchor="middle">·</text>
+        <circle class="boxw" cx="412" cy="232" r="20"/>
+        <text class="ts" x="412" y="237" text-anchor="middle">叶</text>
+        <text class="ts" x="452" y="222" fill="var(--warm)">expanded = False</text>
+        <text class="ts" x="452" y="238">→ 这一次模拟到此为止</text>
+
+        <!-- net call -->
+        <path class="arw" d="M432 246 L534 282" marker-end="url(#a5w)"/>
+        <rect class="boxw" x="538" y="268" width="180" height="66" rx="3"/>
+        <text class="t" x="628" y="292" text-anchor="middle">AZNet 前向</text>
+        <text class="ts" x="628" y="312" text-anchor="middle">P(81)  ·  v</text>
+        <path class="arw" d="M538 330 L424 262" marker-end="url(#a5w)"/>
+        <text class="ts" x="452" y="300" fill="var(--warm)">P, v</text>
+      </g>
+
+      <!-- backup column -->
+      <text class="tt" x="760" y="46" fill="var(--accent)">④ 回传</text>
+      <text class="ts" x="760" y="66">逐层翻号</text>
+      <line class="hair" x1="744" y1="80" x2="744" y2="250"/>
+      <text class="ts" x="760" y="104">叶子的父边  W += −v</text>
+      <text class="ts" x="760" y="150">再上一层    W += +v</text>
+      <text class="ts" x="760" y="196">逐层交替，直到根</text>
+      <text class="ts" x="760" y="236">N 每层都 += 1</text>
+
+      <!-- sign path -->
+      <path class="ara dash" d="M410 256 V272 H168 V64 H394" marker-end="url(#a1a)"/>
+      <text class="ts" x="126" y="168" fill="var(--accent)">回传</text>
+      <text class="ts" x="342" y="212" fill="var(--accent)">−v</text>
+      <text class="ts" x="434" y="118" fill="var(--accent)">+v</text>
+
+      <line class="hair" x1="24" y1="412" x2="896" y2="412"/>
+      <text class="ts" x="24" y="428">每棵树每次模拟只走一条路径、只产生一次网络调用 —— 所以 400 sims = 400 次前向，批量化的空间就在这里</text>
+    </svg>
+    </div>
+    <figcaption><b>符号翻转是最容易写错的一行。</b>价值 <code>v</code> 是从叶子局面「该走子的那一方」看的胜率，往上每退一层，走子方就换一次人，所以 <code>backup()</code> 里每层先 <code>v = -v</code> 再累加。反过来，根节点的 <code>W/N</code> 已经是根方视角，读出来时<strong>不要</strong>再取负。</figcaption>
+  </figure>
+
+  <div class="formula">
+score(a) = Q(a) + c · P(a) · √(ΣN + 1) / (1 + N(a))<br>
+Q(a) = W(a) / N(a)，N(a)=0 时取 0  <span class="note">← 未访问的边只有先验在推</span><br>
+c = 3.0  <span class="note">← c_puct，值越大越偏向"先验高但还没试过"的点</span><br>
+非法点：score = −1e9
+  </div>
+
+  <p>分母里的 <code>1 + N(a)</code> 让被反复选中的边迅速降温，分子里的 <code>√(ΣN+1)</code> 则随总模拟数增长把探索项整体抬高。前期靠 <code>P</code> 排序，后期靠 <code>Q</code> 定胜负 —— 这一个公式同时是策略先验的入口和搜索的收敛机制。</p>
+
+  <h3>根节点的三处特殊处理</h3>
+  <ul>
+    <li><strong>Dirichlet 噪声</strong>：只在根上，<code>P ← (1−0.25)·P + 0.25·Dir(0.3)</code>，仅作用于合法点。没有它，网络先验会自我强化，一整轮自我对弈可能只探索同一套开局。</li>
+    <li><strong>温度采样</strong>：前 12 手按 <code>π = N/ΣN</code> 抽样落子，之后直接取访问数最大的点。这是对局多样性的唯一来源 —— 15×15 那次长跑里 <code>TEMP_MOVES=20</code> 超过了实际对局长度，导致白棋每次防守都有失手概率，胜率塌成黑棋 96%。</li>
+    <li><strong>落子后不丢树</strong>：<code>advance(a)</code> 把根换成对应子节点，整棵子树连同 N/W 一起留下来接着用；新根若已扩展，再补一次 Dirichlet 噪声。</li>
+  </ul>
+</section>
+
+<!-- ===================== 7. lockstep ===================== -->
+<section>
+  <h2>批量 lockstep：几百棵树共用一次前向</h2>
+  <p class="deck">单棵树的一次模拟只要一个 4×9×9 的前向，H20 上这点计算量纯属浪费。<code>run_sims()</code> 让所有对局同步推进，每一轮模拟把各树的叶子拼成一个 batch 走一次 GPU。</p>
+
+  <figure>
+    <div class="figscroll">
+    <svg viewBox="0 0 920 300" role="img" aria-label="批量 lockstep：N 棵树各自下行到一个叶子，叶子编码堆成一个 batch 做一次网络前向，结果再分发回各棵树扩展和回传">
+      <defs>
+        <marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+
+      <text class="tt" x="24" y="34">for _ in range(n_sims):</text>
+
+      <!-- trees -->
+      <g>
+        <rect class="box" x="24" y="56" width="150" height="34" rx="3"/><text class="ts" x="40" y="78">tree 0 → 叶子</text>
+        <rect class="box" x="24" y="96" width="150" height="34" rx="3"/><text class="ts" x="40" y="118">tree 1 → 叶子</text>
+        <rect class="box" x="24" y="136" width="150" height="34" rx="3"/><text class="ts" x="40" y="158">tree 2 · 已终局</text>
+        <text class="ts" x="40" y="192">⋮</text>
+        <rect class="box" x="24" y="204" width="150" height="34" rx="3"/><text class="ts" x="40" y="226">tree 255</text>
+      </g>
+
+      <path class="ar" d="M180 74 H236 V140" marker-end="url(#a6)"/>
+      <path class="ar" d="M180 114 H236" marker-end="url(#a6)"/>
+      <path class="ar" d="M180 222 H236 V160" marker-end="url(#a6)"/>
+      <path class="arw dash" d="M180 154 H206 V220 H700 V200" marker-end="url(#a5w)"/>
+      <text class="ts" x="392" y="240" fill="var(--warm)">终局值直接回传，不进 batch</text>
+
+      <!-- batch -->
+      <rect class="boxa" x="256" y="86" width="150" height="112" rx="3"/>
+      <text class="t" x="331" y="112" text-anchor="middle">xbuf[:k]</text>
+      <text class="ts" x="331" y="134" text-anchor="middle">k × 4 × 9 × 9</text>
+      <text class="ts" x="331" y="156" text-anchor="middle">预分配，不重新</text>
+      <text class="ts" x="331" y="172" text-anchor="middle">申请显存</text>
+      <path class="ar" d="M408 142 H448" marker-end="url(#a6)"/>
+
+      <rect class="box" x="450" y="86" width="160" height="112" rx="3"/>
+      <text class="tt" x="530" y="112" text-anchor="middle">AZNet</text>
+      <text class="ts" x="530" y="134" text-anchor="middle">no_grad · eval</text>
+      <text class="ts" x="530" y="156" text-anchor="middle">一次前向</text>
+      <text class="ts" x="530" y="176" text-anchor="middle">→ probs[k], vals[k]</text>
+      <path class="ar" d="M612 142 H652" marker-end="url(#a6)"/>
+
+      <rect class="boxw" x="654" y="86" width="150" height="112" rx="3"/>
+      <text class="t" x="729" y="112" text-anchor="middle">分发回各树</text>
+      <text class="ts" x="729" y="136" text-anchor="middle">expand(leaf, P)</text>
+      <text class="ts" x="729" y="156" text-anchor="middle">backup(path, v)</text>
+      <text class="ts" x="729" y="176" text-anchor="middle">根节点补噪声</text>
+
+      <path class="ar" d="M806 142 H846 V252 H99 V244" marker-end="url(#a6)"/>
+      <text class="ts" x="470" y="272" text-anchor="middle">下一次模拟</text>
+
+      <line class="hair" x1="24" y1="284" x2="896" y2="284"/>
+    </svg>
+    </div>
+    <figcaption><b>已经分出胜负的树不进 batch。</b><code>select()</code> 返回终局值时直接回传，不占网络调用名额，所以 batch 尺寸 <code>k</code> 随对局陆续结束而缩小 —— 这正是躯干必须用 GroupNorm 的原因。实测 9×9 上 8 worker × 48 局 = 160 positions/s，28 worker × 192 局 = 727 positions/s：瓶颈是 Python 树遍历，多 worker 比大 batch 更划算。</figcaption>
+  </figure>
+</section>
+
+<!-- ===================== 8. 规则先验 ===================== -->
+<section>
+  <h2>可选的第三个先验来源</h2>
+  <p class="deck">A/B 实验里的 <code>rules</code> 臂在扩展时把一个向量化的战术规则先验混进网络先验，冷启动阶段用，之后线性退火掉。</p>
+
+  <div class="formula">
+P = (1 − β) · P<sub>net</sub> + β · P<sub>rule</sub>  <span class="note">← 只在 expand 时混，训练目标完全不变</span><br>
+β(t) = β₀ · max(0, 1 − (t−1)/20)  <span class="note">← β₀ = 0.6，20 轮后两条臂算法完全相同</span><br>
+评估一律强制 β = 0
+  </div>
+
+  <p><code>rule_priors_batch()</code> 用大约 60 个 numpy 操作（与 batch 大小无关）算出成五、封五、活三这类点的权重，所以即使每次批量扩展都调用它也几乎不花时间。<strong>这个实验的结论是负面的</strong>：9×9 上 320 局对打，rules 得分率 50.9% ± 3.9pp，退火区间内外的差值也在噪声里 —— 在这个规模上测不出规则冷启动的优势。</p>
+</section>
+
+<footer>
+  <p>全部结构出自 <code>scripts/train_rl_gomoku_alphazero.py</code>：<code>State.encode</code> L172 · <code>ResBlock</code> L280 · <code>AZNet</code> L294 · <code>Node</code> L327 · <code>Tree.select</code> L347 · <code>Tree.backup</code> L384 · <code>run_sims</code> L411 · <code>selfplay</code> L457 · <code>Buffer.sample</code> L613 · 训练步 L1252。参数量按各层公式手算，未含无参数的 ReLU / Flatten / Tanh。</p>
+</footer>
+
+</div>

@@ -1,9 +1,10 @@
+import GomokuEngine
 import SwiftUI
 
 /// Compact candidate list: rank / coord / winrate (mover POV) / visits /
 /// prior, plus the PV as coordinate text. Row tap toggles the board preview.
 struct CandidateTable: View {
-    let analysis: Analysis
+    let analysis: PositionAnalysis
     let selected: Int?
     let onSelect: (Int) -> Void
 
@@ -22,7 +23,7 @@ struct CandidateTable: View {
                         Text("\(Int((Double(c.winrateMover) * 100).rounded()))%")
                             .font(.caption.monospacedDigit())
                             .frame(width: 40, alignment: .trailing)
-                        Text("\(c.visitsN) 访问")
+                        Text("\(c.visits) 访问")
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
                         Text(String(format: "先验 %.0f%%", c.prior * 100))
                             .font(.caption2.monospacedDigit()).foregroundStyle(.secondary)
