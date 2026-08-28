@@ -359,3 +359,103 @@ final class BookTests: XCTestCase {
         XCTAssertEqual(stones, op.ply_book)
     }
 }
+
+final class AnalysisTests: XCTestCase {
+    private func player(after moves: [Int]) async throws -> AZPlayer {
+        let url = try XCTUnwrap(
+            Bundle.main.url(forResource: "GomokuAZ_b1", withExtension: "mlmodelc"))
+        let p = AZPlayer(net: try await AZNet.load(url: url))
+        var s = GomokuState(config: Rules.config)
+        for a in moves { s.play(a) }
+        await p.reset(to: s)
+        return p
+    }
+
+    // black four, both ends open, black to move: winning moves (7,4)/(7,9)
+    private let wonMoves = [7 * 15 + 5, 0 * 15 + 1, 7 * 15 + 6, 0 * 15 + 3,
+                            7 * 15 + 7, 0 * 15 + 5, 7 * 15 + 8, 0 * 15 + 7]
+    // black four with left end blocked, white to move: (7,9) only saves
+    private let mustBlockMoves = [7 * 15 + 5, 7 * 15 + 4, 7 * 15 + 6, 0 * 15 + 3,
+                                  7 * 15 + 7, 0 * 15 + 5, 7 * 15 + 8]
+
+    func testAnalysisFindsWinningMove() async throws {
+        let p = try await player(after: wonMoves)
+        let maybe = try await p.analyze(simulations: 128)
+        let an = try XCTUnwrap(maybe)
+        XCTAssertEqual(an.toPlay, 1)
+        XCTAssertEqual(an.ply, 8)
+        let top = an.candidates[0]
+        XCTAssertTrue([7 * 15 + 4, 7 * 15 + 9].contains(top.move),
+                      "got \(GameViewModel.coordName(top.move))")
+        XCTAssertGreaterThan(top.q, 0.8, "winning move must read as won")
+        XCTAssertGreaterThan(top.winrateMover, 0.9)
+        XCTAssertEqual(top.pv.first, top.move)
+        XCTAssertEqual(top.pv.count, 1, "PV must stop at the terminal node")
+        XCTAssertEqual(an.vBlackBest, top.q, "black to move: vBlack == q")
+    }
+
+    func testAnalysisBlocksFourAndPOVFlips() async throws {
+        let p = try await player(after: mustBlockMoves)
+        let maybe = try await p.analyze(simulations: 128)
+        let an = try XCTUnwrap(maybe)
+        XCTAssertEqual(an.toPlay, -1, "white to move")
+        XCTAssertEqual(an.candidates[0].move, 7 * 15 + 9)
+        // white POV q -> black POV flips the sign
+        XCTAssertEqual(an.vBlackBest, -an.candidates[0].q)
+        // PV ghost colors alternate starting with the mover
+        XCTAssertEqual(an.pvColor(0), -1)
+        XCTAssertEqual(an.pvColor(1), 1)
+    }
+
+    func testPVsAreLegalAndBounded() async throws {
+        let p = try await player(after: mustBlockMoves)
+        let maybe = try await p.analyze(simulations: 128)
+        let an = try XCTUnwrap(maybe)
+        var base = GomokuState(config: Rules.config)
+        for a in mustBlockMoves { base.play(a) }
+        XCTAssertLessThanOrEqual(an.candidates.count, 5)
+        var lastN = Int.max
+        for c in an.candidates {
+            XCTAssertLessThanOrEqual(c.visits, lastN, "sorted by visits")
+            lastN = c.visits
+            XCTAssertLessThanOrEqual(c.pv.count, 3)
+            var s = base
+            for a in c.pv {
+                XCTAssertTrue(s.isLegal(a), "PV must replay legally")
+                s.play(a)
+            }
+        }
+    }
+
+    /// Analysis runs on the game tree; a human move right after must still
+    /// start the AI turn (regression: the two-tap preview once ate the move).
+    @MainActor
+    func testAnalysisModeEndToEnd() async throws {
+        let vm = GameViewModel()
+        await vm.waitUntilReady()
+        try XCTSkipUnless(vm.engineReady, "engine did not load: \(vm.engineBadge)")
+        vm.level = .s128
+        vm.toggleAnalysis()
+        for _ in 0..<200 where vm.analysis == nil {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let an = try XCTUnwrap(vm.analysis, "analysis never arrived")
+        XCTAssertEqual(an.ply, 0)
+        XCTAssertEqual(an.toPlay, 1)
+        XCTAssertFalse(vm.winrateHistory.isEmpty)
+        let top = an.candidates[0].move
+        XCTAssertEqual(vm.previewMove, top, "top PV auto-previewed")
+        XCTAssertEqual(vm.previewPV?.first, top)
+        vm.tap(top)
+        XCTAssertEqual(vm.moves.first, top, "single tap must play")
+        XCTAssertNil(vm.previewMove, "preview cleared on apply")
+        XCTAssertTrue(vm.thinking, "AI turn must start after the human move")
+        // and the engine tree must still track the board through all of it
+        for _ in 0..<200 where vm.thinking {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let engine = await vm.engineBoard()
+        XCTAssertEqual(engine, vm.board, "engine drifted from the board")
+        vm.newGame()
+    }
+}

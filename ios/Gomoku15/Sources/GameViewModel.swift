@@ -56,6 +56,22 @@ final class GameViewModel: ObservableObject {
     @Published var lastMoveMs: Int? = nil
     @Published var gameOver = false
 
+    // KataGo-style analysis mode
+    @Published var analysisOn = false
+    @Published var analysis: PositionAnalysis? = nil
+    @Published var analyzing = false
+    @Published var previewMove: Int? = nil          // candidate whose PV shows
+    @Published var winrateHistory: [Int: Float] = [:]  // ply -> vBlack in [-1, 1]
+    private var analysisTask: Task<Void, Never>?
+
+    /// PV of the selected candidate, for the board's ghost-stone preview.
+    var previewPV: [Int]? {
+        guard let a = previewMove else { return nil }
+        return analysis?.candidates.first(where: { $0.move == a })?.pv
+    }
+
+    private var analysisSims: Int { level == .raw ? 400 : level.rawValue }
+
     /// Geometry actually in force. Replaced in `boot()` with the config the
     /// exporter stamped into the model, so the UI position and the engine's
     /// tree are built from one source rather than two that happen to agree.
@@ -153,7 +169,10 @@ final class GameViewModel: ObservableObject {
                                      bad, worst, worstValue)
             }
             newGame()
-            if ProcessInfo.processInfo.arguments.contains("-autoplay") {
+            if ProcessInfo.processInfo.arguments.contains("-analysis") {
+                analysisOn = true
+                await autoplayForScreenshots()
+            } else if ProcessInfo.processInfo.arguments.contains("-autoplay") {
                 await autoplayForScreenshots()
             }
         } catch {
@@ -208,6 +227,7 @@ final class GameViewModel: ObservableObject {
     /// Rebuilds the game at a move prefix (new game, undo, opening book) and
     /// hands the turn to whoever is due -- including triggering the AI.
     private func reset(to keep: [Int], playingStatus: String, waitingStatus: String) {
+        cancelAnalysis()
         state = GomokuState(config: config)
         for a in keep { state.play(a) }
         moves = keep
@@ -219,6 +239,9 @@ final class GameViewModel: ObservableObject {
         lastMoveMs = nil
         gameOver = state.isOver
         statusIsGood = nil
+        analysis = nil
+        previewMove = nil
+        winrateHistory = winrateHistory.filter { $0.key < keep.count }
         guard engineReady else {
             status = "引擎不可用"
             return
@@ -226,9 +249,13 @@ final class GameViewModel: ObservableObject {
         status = (!gameOver && state.toPlay != humanSide) ? playingStatus : waitingStatus
         // the tree cannot walk backwards, so a prefix change means replay
         runEngine(sync: .rewind(keep))
+        if !gameOver, state.toPlay == humanSide { scheduleAnalysis() }
     }
 
     private func apply(_ a: Int) {
+        cancelAnalysis()
+        analysis = nil
+        previewMove = nil
         let mover = state.toPlay
         let r = a / config.board, c = a % config.board
         state.play(a)
@@ -236,6 +263,10 @@ final class GameViewModel: ObservableObject {
         board = state.cells
         if state.isOver {
             gameOver = true
+            if analysisOn {
+                winrateHistory[moves.count] =
+                    state.winner == 0 ? 0 : (state.winner == 1 ? 1 : -1)
+            }
             if state.winner != 0 {
                 winCells = state.winningLine(through: r, c, player: mover)
                 let youWin = state.winner == humanSide
@@ -337,10 +368,68 @@ final class GameViewModel: ObservableObject {
         // `value` is the mover's view, and the mover is the AI until `apply`
         let aiIsBlack = state.toPlay == 1
         valueBlack = aiIsBlack ? r.value : -r.value
+        if analysisOn, let v = valueBlack {
+            // the AI's own search doubles as this ply's analysis
+            winrateHistory[moves.count] = v
+        }
         apply(r.action)
         if !gameOver {
             let secs = String(format: "%.1f", Double(lastMoveMs ?? 0) / 1000)
             status = "AI 落子 \(Self.coordName(r.action))（\(secs)s）。轮到你。"
+            scheduleAnalysis()
+        }
+    }
+
+    // MARK: - analysis mode (KataGo-style)
+
+    func toggleAnalysis() {
+        analysisOn.toggle()
+        if analysisOn {
+            scheduleAnalysis()
+        } else {
+            cancelAnalysis()
+            analysis = nil
+            previewMove = nil
+            // winrateHistory kept: toggling back on continues the chart
+        }
+    }
+
+    /// Table-row tap: switch the board's PV preview to this candidate.
+    func selectCandidate(_ a: Int) {
+        guard analysis?.candidates.contains(where: { $0.move == a }) == true
+        else { return }
+        previewMove = previewMove == a ? nil : a
+    }
+
+    private func cancelAnalysis() {
+        analysisTask?.cancel()
+        analysisTask = nil
+        analyzing = false
+    }
+
+    /// Analyzes the current position (human to move) on the game tree.
+    /// `AZPlayer` serialises access and aborts on tree swaps; the ply check
+    /// on arrival drops anything stale. Runs only after the pending engine
+    /// task has synced the actor's tree to this position.
+    private func scheduleAnalysis() {
+        guard analysisOn, engineReady, !gameOver, !thinking,
+              state.toPlay == humanSide, let player else { return }
+        cancelAnalysis()
+        let sims = analysisSims
+        let pending = engineTask
+        analyzing = true
+        analysisTask = Task { [weak self] in
+            _ = await pending?.value       // tree now matches the board
+            guard !Task.isCancelled else { return }
+            let result = (try? await player.analyze(simulations: sims)) ?? nil
+            guard let self, !Task.isCancelled else { return }
+            self.analyzing = false
+            guard let r = result, r.ply == self.moves.count, !self.gameOver,
+                  self.analysisOn else { return }
+            self.analysis = r
+            // auto-preview the best line; table rows switch branches
+            self.previewMove = r.candidates.first?.move
+            if let v = r.vBlackBest { self.winrateHistory[r.ply] = v }
         }
     }
 
@@ -354,7 +443,14 @@ final class GameViewModel: ObservableObject {
             tap(a)
         }
         while thinking { try? await Task.sleep(nanoseconds: 100_000_000) }
-        if heat != nil { showHeat = true }
+        if analysisOn {
+            // let the post-move analysis (and its auto PV preview) land
+            for _ in 0..<100 where analysis == nil {
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        } else if heat != nil {
+            showHeat = true
+        }
     }
 
     /// Board-coordinate label. Static and UI-only, so it reads the UI constant;

@@ -10,6 +10,7 @@
 		1D12F5C30509336D094ED1D6 /* GomokuEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7345D7F9A33F6F886965CCBE /* GomokuEngine */; };
 		39BF5801CE867449E3B4F982 /* testvec.json in Resources */ = {isa = PBXBuildFile; fileRef = 20320E0CCF992D8125145459 /* testvec.json */; };
 		6FB3C342E31C42A54222AD17 /* OpeningBook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */; };
+		835A27BF23CB58A2D2A804F3 /* AnalysisViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782D70F6D6D67D3CBED4D944 /* AnalysisViews.swift */; };
 		8B6691D7FDDC7CF33A35A673 /* EngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E58FE114EC2BF42847440D /* EngineTests.swift */; };
 		93557FB7B37E8F5DBD3D18D1 /* GomokuAZ_b1.mlpackage in Sources */ = {isa = PBXBuildFile; fileRef = D76B60013E03168AADFF21D8 /* GomokuAZ_b1.mlpackage */; };
 		94283BCFA44F758C2F28AAE1 /* Gomoku15App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E687F176EF14395A24DA21D /* Gomoku15App.swift */; };
@@ -42,6 +43,7 @@
 		258E41B322077128FF742FB1 /* GameViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameViewModel.swift; sourceTree = "<group>"; };
 		4E04C1439D456DB612092446 /* Gomoku15.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Gomoku15.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		68AB5E4ACE02965B874DC6C6 /* BoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoardView.swift; sourceTree = "<group>"; };
+		782D70F6D6D67D3CBED4D944 /* AnalysisViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnalysisViews.swift; sourceTree = "<group>"; };
 		991E9CDC9C5444B3EABBAC6E /* OpeningBook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpeningBook.swift; sourceTree = "<group>"; };
 		9E687F176EF14395A24DA21D /* Gomoku15App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Gomoku15App.swift; sourceTree = "<group>"; };
 		A6D512C57E473A5296DAD598 /* BookView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookView.swift; sourceTree = "<group>"; };
@@ -120,6 +122,7 @@
 		9052AFA973879E88C3A40989 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				782D70F6D6D67D3CBED4D944 /* AnalysisViews.swift */,
 				68AB5E4ACE02965B874DC6C6 /* BoardView.swift */,
 				A6D512C57E473A5296DAD598 /* BookView.swift */,
 				258E41B322077128FF742FB1 /* GameViewModel.swift */,
@@ -283,6 +286,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				835A27BF23CB58A2D2A804F3 /* AnalysisViews.swift in Sources */,
 				EF6CEE513B2DAC5672CEBBAE /* BoardView.swift in Sources */,
 				9F1813E88A0D05C9499874BA /* BookView.swift in Sources */,
 				FA3D6B2F465FD1DFB5ACDB9B /* GameViewModel.swift in Sources */,

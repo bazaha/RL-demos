@@ -190,6 +190,8 @@ cd ios && xcodegen generate && xcodebuild -scheme Gomoku15 \
   自洽）。仍然坚持写 `.cpuAndNeuralEngine`:那是保证,`.all` 是启发式,而这个 GroupNorm 图已经在一个平台上
   被挑错过一次。搜索整体 **400 sims / 218 ms = 0.544 ms/sim（4.6 手/秒）**,比 M5 那组 0.8ms/sim 更快,
   多半是因为那组读的是 App UI 计时器（含 UI 开销）而这里量的是纯搜索
+- **分析模式（2026-08-28 移植到 GomokuEngine,KataGo 式;首版 2026-08-27 于旧栈）**:"分析"开关打开后,每个"轮到人"的局面自动跑一次 `AZPlayer.analyze(simulations:)`（raw 档 400 sims,其余同档位）——**直接在对局树上分析**:actor 串行化天然无竞态,`treeGeneration` 防换树,且人落子后 `.advance` 保留子树、AI 应手直接热启动。提取 API 在包里（`GomokuEngine/Sources/GomokuEngine/Analysis.swift`:`MoveCandidate`/`PositionAnalysis` + `Tree.analysis(topK:pvPlies:)`,`Node.children` 是包内部所以 PV 走线必须住在包内;树每层 Q 都是**该层行棋方视角**,全部视角换算集中在这一个文件）。AI 回合不重跑——`search()` 里的 `r.value` 直接进胜率走势。UI:top-5 候选圆标(行棋方视角胜率+访问数,cell<22pt 只画胜率行)、分析完成自动虚影最佳分支后续 2 步(点候选表行切换分支)、候选表、黑方视角胜率折线;**棋盘单击永远直接落子**——首版"点候选先预览、再点落子"两段式在真机上是灾难(候选覆盖所有合理下一手,虚影像已落子,用户以为 AI 卡死,实测报障后改掉)。坑:候选显示时抑制热力图(同在空点会叠画);VM 侧 `scheduleAnalysis` 必须先 `await engineTask?.value` 等树同步到当前局面再 analyze;结果带 `ply`(= 根的 moveCount),回主线程与 `moves.count` 不符即丢弃;`-analysis` 启动参数(截图用)
+
 
 ### 本地推理服务（2026-08-18，`serve_gomoku.py`，可选加速）
 

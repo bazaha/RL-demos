@@ -92,22 +92,31 @@ struct ContentView: View {
                     .pickerStyle(.segmented)
                 }
 
-                HStack(spacing: 10) {
+                HStack(spacing: 8) {
                     Button(action: { vm.newGame() }) {
                         Label("新对局", systemImage: "arrow.counterclockwise")
+                            .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(vm.thinking)
                     Button(action: { vm.undo() }) {
                         Label("悔棋", systemImage: "arrow.uturn.backward")
+                            .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .buttonStyle(.bordered)
                     .disabled(vm.thinking || vm.moves.isEmpty)
                     Button(action: { vm.showHeat.toggle() }) {
                         Label("AI 视角", systemImage: "eye")
+                            .lineLimit(1).minimumScaleFactor(0.75)
                     }
                     .buttonStyle(.bordered)
                     .disabled(!vm.hasHeatToShow)
+                    Button(action: { vm.toggleAnalysis() }) {
+                        Label("分析", systemImage: "waveform.path.ecg")
+                            .lineLimit(1).minimumScaleFactor(0.75)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(vm.analysisOn ? .teal : nil)
                 }
 
                 HStack(spacing: 8) {
@@ -137,6 +146,28 @@ struct ContentView: View {
                             }
                         }
                         .frame(height: 8)
+                    }
+                }
+
+                if vm.analysisOn {
+                    if vm.analyzing && vm.analysis == nil {
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text("分析中…").font(.caption2).foregroundStyle(.secondary)
+                        }
+                    }
+                    if let an = vm.analysis {
+                        CandidateTable(analysis: an, selected: vm.previewMove,
+                                       onSelect: { vm.selectCandidate($0) })
+                            .padding(8)
+                            .background(Color(.secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 8))
+                    }
+                    if !vm.winrateHistory.isEmpty {
+                        WinrateChart(history: vm.winrateHistory)
+                            .padding(8)
+                            .background(Color(.secondarySystemGroupedBackground),
+                                        in: RoundedRectangle(cornerRadius: 8))
                     }
                 }
 

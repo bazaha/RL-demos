@@ -1,26 +1,34 @@
 import SwiftUI
 
-/// Pure display board: no view-model dependency, reused by the game screen
-/// and the opening-book previews.
+import GomokuEngine
+
+/// Pure display board: no view-model dependency, reused by the game screen,
+/// the opening-book previews and the analysis overlay.
 struct BoardCanvas: View {
     var board: [Int8]
     var lastMove: Int? = nil
     var winCells: [Int]? = nil
     var heat: [Float]? = nil
     var showHeat = false
+    var candidates: [MoveCandidate]? = nil   // analysis marks (empty cells only)
+    var pvLine: [Int]? = nil             // ghost-stone preview of one PV
+    var pvToPlay: Int8 = 1               // mover at the analyzed position
 
     var body: some View {
         Canvas { ctx, size in
             Self.draw(ctx: ctx, size: min(size.width, size.height),
                       board: board, lastMove: lastMove, winCells: winCells,
-                      heat: heat, showHeat: showHeat)
+                      heat: heat, showHeat: showHeat,
+                      candidates: candidates, pvLine: pvLine,
+                      pvToPlay: pvToPlay)
         }
         .aspectRatio(1, contentMode: .fit)
     }
 
     static func draw(ctx: GraphicsContext, size: CGFloat, board: [Int8],
                      lastMove: Int?, winCells: [Int]?, heat: [Float]?,
-                     showHeat: Bool) {
+                     showHeat: Bool, candidates: [MoveCandidate]? = nil,
+                     pvLine: [Int]? = nil, pvToPlay: Int8 = 1) {
         let B = Rules.board
         let pad = size * 0.045
         let cell = (size - 2 * pad) / CGFloat(B - 1)
@@ -45,7 +53,9 @@ struct BoardCanvas: View {
                      with: .color(lineColor))
         }
 
-        if showHeat, let heat {
+        // heat (last AI search) -- suppressed while candidate marks are
+        // shown: both live on empty cells and would overpaint each other
+        if showHeat, let heat, candidates == nil {
             for h in heatCells(heat: heat, board: board) {
                 let p = xy(h.index)
                 ctx.fill(Path(roundedRect: CGRect(x: p.x - cell * 0.38, y: p.y - cell * 0.38,
@@ -56,19 +66,53 @@ struct BoardCanvas: View {
         }
 
         for i in 0..<Rules.cells where board[i] != 0 {
-            let p = xy(i)
-            let rad = cell * 0.44
-            let rect = CGRect(x: p.x - rad, y: p.y - rad, width: 2 * rad, height: 2 * rad)
-            let isBlack = board[i] == 1
-            ctx.fill(Path(ellipseIn: rect),
-                     with: .radialGradient(
-                        Gradient(colors: isBlack
-                                 ? [Color(white: 0.28), .black]
-                                 : [.white, Color(white: 0.88)]),
-                        center: CGPoint(x: p.x - rad * 0.3, y: p.y - rad * 0.35),
-                        startRadius: rad * 0.1, endRadius: rad * 1.2))
-            ctx.stroke(Path(ellipseIn: rect),
-                       with: .color(.black.opacity(isBlack ? 0.5 : 0.3)), lineWidth: 0.6)
+            stoneBody(ctx, at: xy(i), rad: cell * 0.44, isBlack: board[i] == 1)
+        }
+
+        // analysis candidate marks: winrate% (mover POV) + visits
+        if let cands = candidates {
+            for (idx, c) in cands.enumerated() where board[c.move] == 0 {
+                let p = xy(c.move)
+                let rad = cell * 0.44
+                let rect = CGRect(x: p.x - rad, y: p.y - rad,
+                                  width: 2 * rad, height: 2 * rad)
+                let isBest = idx == 0
+                let tint = isBest ? Color(red: 0.05, green: 0.55, blue: 0.47)
+                                  : Color(red: 0.36, green: 0.47, blue: 0.66)
+                ctx.fill(Path(ellipseIn: rect),
+                         with: .color(tint.opacity(isBest ? 0.92 : 0.60)))
+                ctx.stroke(Path(ellipseIn: rect), with: .color(tint),
+                           lineWidth: isBest ? 1.6 : 0.8)
+                let wr = Int((Double(c.winrateMover) * 100).rounded())
+                if cell >= 22 {
+                    ctx.draw(Text("\(wr)")
+                        .font(.system(size: cell * 0.34, weight: .bold))
+                        .foregroundColor(.white),
+                             at: CGPoint(x: p.x, y: p.y - cell * 0.11))
+                    ctx.draw(Text("\(c.visits)")
+                        .font(.system(size: cell * 0.22))
+                        .foregroundColor(.white.opacity(0.85)),
+                             at: CGPoint(x: p.x, y: p.y + cell * 0.20))
+                } else {
+                    ctx.draw(Text("\(wr)")
+                        .font(.system(size: cell * 0.36, weight: .bold))
+                        .foregroundColor(.white), at: p)
+                }
+            }
+        }
+
+        // PV ghost stones: the selected candidate plus the next plies
+        if let pv = pvLine {
+            for (k, a) in pv.enumerated() where board[a] == 0 {
+                let isBlack = (k % 2 == 0 ? pvToPlay : -pvToPlay) == 1
+                let p = xy(a)
+                var ghost = ctx
+                ghost.opacity = 0.62
+                stoneBody(ghost, at: p, rad: cell * 0.44, isBlack: isBlack)
+                ghost.draw(Text("\(k + 1)")
+                    .font(.system(size: cell * 0.40, weight: .semibold))
+                    .foregroundColor(isBlack ? .white : .black), at: p)
+            }
         }
 
         if let last = lastMove {
@@ -83,6 +127,20 @@ struct BoardCanvas: View {
             ctx.stroke(line, with: .color(.orange),
                        style: StrokeStyle(lineWidth: 3.5, lineCap: .round))
         }
+    }
+
+    private static func stoneBody(_ ctx: GraphicsContext, at p: CGPoint,
+                                  rad: CGFloat, isBlack: Bool) {
+        let rect = CGRect(x: p.x - rad, y: p.y - rad, width: 2 * rad, height: 2 * rad)
+        ctx.fill(Path(ellipseIn: rect),
+                 with: .radialGradient(
+                    Gradient(colors: isBlack
+                             ? [Color(white: 0.28), .black]
+                             : [.white, Color(white: 0.88)]),
+                    center: CGPoint(x: p.x - rad * 0.3, y: p.y - rad * 0.35),
+                    startRadius: rad * 0.1, endRadius: rad * 1.2))
+        ctx.stroke(Path(ellipseIn: rect),
+                   with: .color(.black.opacity(isBlack ? 0.5 : 0.3)), lineWidth: 0.6)
     }
 }
 
@@ -123,7 +181,10 @@ struct BoardView: View {
         GeometryReader { geo in
             let size = min(geo.size.width, geo.size.height)
             BoardCanvas(board: vm.board, lastMove: vm.moves.last,
-                        winCells: vm.winCells, heat: vm.heat, showHeat: vm.showHeat)
+                        winCells: vm.winCells, heat: vm.heat, showHeat: vm.showHeat,
+                        candidates: vm.analysisOn ? vm.analysis?.candidates : nil,
+                        pvLine: vm.analysisOn ? vm.previewPV : nil,
+                        pvToPlay: vm.analysis?.toPlay ?? 1)
                 .frame(width: size, height: size)
                 .contentShape(Rectangle())
                 .onTapGesture { pt in

@@ -160,6 +160,25 @@ public actor AZPlayer {
                             elapsed: Date().timeIntervalSince(start))
     }
 
+    /// Searches the current position WITHOUT playing a move, and reads the
+    /// candidates back out. Runs on the game tree on purpose: the actor
+    /// serialises access, `treeGeneration` aborts the run if a move lands
+    /// mid-search, and the visits stay behind to warm up the next `think`.
+    ///
+    /// Returns nil when the position is terminal, the search was abandoned
+    /// (cancellation or a tree swap), or nothing was visited.
+    public func analyze(
+        simulations: Int,
+        topK: Int = 5,
+        pvPlies: Int = 3,
+        progress: (@Sendable (Int, Int) -> Void)? = nil
+    ) async throws -> PositionAnalysis? {
+        let r = try await think(simulations: max(1, simulations),
+                                progress: progress)
+        guard r.action >= 0, !r.visits.isEmpty else { return nil }
+        return tree.analysis(topK: topK, pvPlies: pvPlies)
+    }
+
     /// Visit-count move selection, matching the trainer's `AZPlayer.move_batch`:
     /// normalise by the max *before* raising to 1/temperature, or the power
     /// overflows for small temperatures.
