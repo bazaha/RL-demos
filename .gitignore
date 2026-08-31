@@ -21,6 +21,10 @@ results/coreml_export/**
 # SwiftPM build products
 ios/**/.build/
 
+# per-user Xcode state (window layout, last-open tabs); one slipped into git
+# once and made every `xcodegen generate` dirty the tree
+ios/**/xcuserdata/
+
 # scratch
 __pycache__/
 *.pid

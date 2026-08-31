@@ -1,9 +1,16 @@
 name: Gomoku15
 options:
+  # NOTE for App Store: `local.rl-demos.gomoku` is a placeholder. Register a
+  # real bundle ID in the developer account and change it here BEFORE the
+  # first upload -- the ID is locked to the App Store Connect record after
+  # a build has been uploaded.
   bundleIdPrefix: local.rl-demos
   deploymentTarget:
     iOS: "18.0"
   createIntermediateGroups: true
+  # The whole UI is Simplified Chinese; this keeps CFBundleDevelopmentRegion
+  # (what the system and the store report as the app's native language) true.
+  developmentLanguage: zh-Hans
 packages:
   # The engine (rules + Core ML + MCTS) lives in one place and is unit-tested
   # on its own. The app used to carry a second, divergent copy of it; that copy
@@ -34,9 +41,21 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: local.rl-demos.gomoku
+        # App Store validation rejects a binary whose Info.plist has no
+        # CFBundleShortVersionString / CFBundleVersion; with a generated
+        # Info.plist they come from these two settings, which have no default.
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: 1
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # iPad + multitasking (no UIRequiresFullScreen) requires all four
+        # orientations or the upload fails validation (ITMS-90474). The board
+        # already adapts to any aspect via GeometryReader.
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        # No crypto beyond the OS's own (the app never touches the network),
+        # so answer App Store Connect's export-compliance question once here.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: "NO"
         INFOPLIST_KEY_CFBundleDisplayName: "五子棋 AZ"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
