@@ -20,6 +20,9 @@ results/coreml_export/**
 
 # SwiftPM build products
 ios/**/.build/
+# xcodebuild -derivedDataPath target for CLI device builds (Release .app,
+# build log). Anchored for the same reason as /data/ above.
+/build/
 
 # per-user Xcode state (window layout, last-open tabs); one slipped into git
 # once and made every `xcodegen generate` dirty the tree
